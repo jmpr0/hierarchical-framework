@@ -167,11 +167,8 @@ if config_file:
     with open(config_file) as f:
         config = json.load(f)
 
-<<<<<<< HEAD
     print(config)
 
-=======
->>>>>>> cc9cd007343263136d6bac6b0d9c477536a12f1e
     for node in config:
         if config[node] not in supported_classifiers:
             print('Classifier not supported in configuration file\nList of available classifiers:\n')
