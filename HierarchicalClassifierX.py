@@ -171,14 +171,14 @@ if config_file:
 
     for node in config:
         print(config[node])
-        if config[node] not in supported_classifiers:
+        if config[node]['c'] not in supported_classifiers:
             print('Classifier not supported in configuration file\nList of available classifiers:\n')
             for sc in np.sort(supported_classifiers.keys()):
                 print('-c ' + sc + '\t--->\t' + supported_classifiers[sc].split('_')[1] + '\t\timplemented in ' +
                       supported_classifiers[sc].split('_')[0])
             print('Configuration inserted:\n', config)
             sys.exit()
-        if config[node][0] not in import_str:
+        if config[node]['c'][0] not in import_str:
             import_str += config[node][0]
             if config[node][1] == 'k':
                 import_str += config[node][1]
