@@ -170,6 +170,7 @@ if config_file:
     print(config)
 
     for node in config:
+        print(config[node])
         if config[node] not in supported_classifiers:
             print('Classifier not supported in configuration file\nList of available classifiers:\n')
             for sc in np.sort(supported_classifiers.keys()):
