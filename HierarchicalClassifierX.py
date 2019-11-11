@@ -179,9 +179,9 @@ if config_file:
             print('Configuration inserted:\n', config)
             sys.exit()
         if config[node]['c'][0] not in import_str:
-            import_str += config[node][0]
-            if config[node][1] == 'k':
-                import_str += config[node][1]
+            import_str += config[node]['c'][0]
+            if config[node]['c'][1] == 'k':
+                import_str += config[node]['c'][1]
 
 else:
 
