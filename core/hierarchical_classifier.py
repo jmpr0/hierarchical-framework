@@ -128,6 +128,7 @@ class HierarchicalClassifier(object):
         self.fine_nominal_features_index = list()
         self.numerical_features_length = -1
         self.nominal_features_lengths = list()
+        self.anomaly_class = ''
 
     def set_config(self, config_name, config):
         self.has_config = True
