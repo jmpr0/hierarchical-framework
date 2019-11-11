@@ -109,6 +109,26 @@ class HierarchicalClassifier(object):
 
         self.super_learner_default = ['ssv', 'sif']
 
+        self.config_name = ''
+        self.config = ''
+        self.material_folder = ''
+        self.material_proba_folder = ''
+        self.material_features_folder = ''
+        self.material_train_durations_folder = ''
+        self.graph_folder = ''
+        self.type_discr = ''
+        self.params_discr = ''
+        self.attributes_number = -1
+        self.dataset_features_number = -1
+        self.features = list()
+        self.labels = list()
+        self.features_names = list()
+        self.nominal_features_index = list()
+        self.numerical_features_index = list()
+        self.fine_nominal_features_index = list()
+        self.numerical_features_length = -1
+        self.nominal_features_lengths = list()
+
     def set_config(self, config_name, config):
         self.has_config = True
         self.config_name = config_name
@@ -260,13 +280,13 @@ class HierarchicalClassifier(object):
 
         with open(
                 self.material_train_durations_folder + arbitrary_discr + 'multi_' + self.type_discr + self.params_discr + '_buckets_train_durations.dat',
-                'a') as file:
-            file.write('%.6f\n' % (np.max(bucket_times)))
+                'a') as file0:
+            file0.write('%.6f\n' % (np.max(bucket_times)))
             for i, bucket_time in enumerate(bucket_times):
                 with open(
                         self.material_train_durations_folder + arbitrary_discr + 'multi_' + self.type_discr + self.params_discr + '_bucket_' + str(
-                            i) + '_train_durations.dat', 'a') as file:
-                    file.write('%.6f\n' % (bucket_time))
+                            i) + '_train_durations.dat', 'a') as file1:
+                    file1.write('%.6f\n' % bucket_time)
 
     def write_time(self, time, level, tag, arbitrary_discr=None):
         if arbitrary_discr is None:
