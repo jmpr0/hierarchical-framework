@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 import getopt
 import json
 import os
@@ -164,6 +166,8 @@ if config_file:
 
     with open(config_file) as f:
         config = json.load(f)
+
+    print(config)
 
     for node in config:
         if config[node] not in supported_classifiers:
