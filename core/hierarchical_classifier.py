@@ -123,7 +123,6 @@ class HierarchicalClassifier(object):
         self.features = list()
         self.labels = list()
         self.features_names = list()
-        self.nominal_features_index = list()
         self.numerical_features_index = list()
         self.fine_nominal_features_index = list()
         self.numerical_features_length = -1
@@ -455,7 +454,7 @@ class HierarchicalClassifier(object):
             # Multiclass AD - OneVSAll
             # TODO: now it works only on one level dataset for AD, where when multiclass and anomaly is specified, anomaly goes to '1' and others to '0'
             # if self.anomaly and np.unique(data[:,self.attributes_number-1]).shape[0] > 2: <---- BUG??
-            print(self.anomaly, self.anomaly_classes)
+            # print(self.anomaly, self.anomaly_classes)
             if self.anomaly and len(self.anomaly_classes) > 0:
                 for anomaly_class in self.anomaly_classes:
                     data[np.where(data[:,
@@ -489,6 +488,8 @@ class HierarchicalClassifier(object):
                         self.features_number, self.anomaly_class, self.features, self.labels
                     ]
                     , open('%s.yetpreprocessed.pickle' % self.input_file, 'wb'), pk.HIGHEST_PROTOCOL)
+        # print(self.numerical_features_index, self.nominal_features_index, self.fine_nominal_features_index)
+        # input()
 
     def load_early_dataset(self):
 
@@ -605,6 +606,7 @@ class HierarchicalClassifier(object):
         root.children_tags = [tag for tag in np.unique((self.labels[:, root.level])) if tag not in self.hidden_classes]
         root.children_number = len(root.children_tags)
         root.label_encoder = MyLabelEncoder()
+        # print(root.children_tags, self.hidden_classes)
         root.label_encoder.fit(root.children_tags + self.hidden_classes)
 
         # Apply config to set number of features
@@ -614,6 +616,7 @@ class HierarchicalClassifier(object):
             elif 'p' in self.config[root.tag + '_' + str(root.level + 1)]:
                 root.packets_number = self.config[root.tag + '_' + str(root.level + 1)]['p']
             root.classifier_class = self.config[root.tag + '_' + str(root.level + 1)]['c']
+            classifier_to_call = getattr(self, supported_classifiers[root.classifier_class])
 
             print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
                   'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
@@ -623,27 +626,27 @@ class HierarchicalClassifier(object):
             # root.encoded_features_number = self.encoded_dataset_features_number
             root.packets_number = self.packets_number
 
-        # If self.anomaly_class is set and it has two children (i.e. is a binary classification problem)
-        # ROOT had to be an Anomaly Detector
-        # In this experimentation we force the setting of AD to be a SklearnAnomalyDetector
-        if self.anomaly and root.children_number == 2:
-            root.detector_class = self.detector_class
-            root.detector_opts = self.detector_opts
-            print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
-                  'd', root.detector_class, 'train_test_len', len(root.train_index), len(root.test_index))
-            classifier_to_call = self._AnomalyDetector
-        else:
-            root.classifier_class = self.classifier_class
-            root.classifier_opts = self.classifier_opts
-            print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
-                  'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
-            classifier_to_call = getattr(self, supported_classifiers[root.classifier_class])
+            # If self.anomaly_class is set and it has two children (i.e. is a binary classification problem)
+            # ROOT had to be an Anomaly Detector
+            # In this experimentation we force the setting of AD to be a SklearnAnomalyDetector
+            if self.anomaly and root.children_number == 2:
+                root.detector_class = self.detector_class
+                root.detector_opts = self.detector_opts
+                print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
+                      'd', root.detector_class, 'train_test_len', len(root.train_index), len(root.test_index))
+                classifier_to_call = self._AnomalyDetector
+            else:
+                root.classifier_class = self.classifier_class
+                root.classifier_opts = self.classifier_opts
+                print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
+                      'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
+                classifier_to_call = getattr(self, supported_classifiers[root.classifier_class])
 
         root.classifier = classifier_to_call(node=root)
 
         # Creating hierarchy recursively, if max level target is set, classification continue while reaches it
         # If it's not set, it is equal to levels number. If level target is set, we have only the analysis at selected level.
-        if root.level < self.max_level_target - 1 and root.children_number > 0 and self.level_target < 0:
+        if root.level < self.max_level_target - 1 and root.children_number > 0:
             self.initialize_nodes_recursive(root, nodes)
 
         return nodes
@@ -785,14 +788,16 @@ class HierarchicalClassifier(object):
             # Iterative testing_all, it is parallelizable in various ways
             for node in nodes:
                 if node.children_number > 1:
+                    print('Testing (all) node %s %s_%s' % (node, node.tag, node.level))
                     self.write_fold(node.level, node.tag, node.children_tags, _all=True)
                     self.test_all(node)
 
             # Recursive testing, each level is parallelizable and depends on previous level predictions
             root = nodes[0]
+            print('Testing node %s %s_%s' % (root, root.tag, root.level))
             self.write_fold(root.level, root.tag, root.children_tags)
             self.test(root)
-            if root.level < self.max_level_target - 1 and root.children_number > 1 and self.level_target < 0:
+            if root.level < self.max_level_target - 1 and root.children_number > 1:
                 self.test_recursive(root)
 
             # Writing unary class predictions
@@ -896,8 +901,8 @@ class HierarchicalClassifier(object):
             child = parent.children[child_tag]
             child.test_index = [index for index in parent.test_index if
                                 self.predictions[index, parent.level] == child_tag]
-            print('Test node %s %s_%s' % (child, child.tag, child.level))
             if child.children_number > 1:
+                print('Testing node %s %s_%s' % (child, child.tag, child.level))
                 self.write_fold(child.level, child.tag, child.children_tags)
                 self.test(child)
                 if child.level < self.max_level_target - 1:
@@ -993,9 +998,6 @@ class HierarchicalClassifier(object):
         classifier = SklearnWekaWrapper(node.classifier_class)
         # Features selection
         node.features_index = self.features_selection(node)
-        classifier.set_oracle(
-            node.label_encoder.transform(self.labels[node.test_index, node.level])
-        )
         return classifier
 
     def Weka_NaiveBayes(self, node):
@@ -1018,7 +1020,7 @@ class HierarchicalClassifier(object):
         # Features selection
         node.features_index = self.features_selection(node)
         classifier.set_oracle(
-            node.label_encoder.transform(self.labels[node.test_index, node.level])
+            node.label_encoder.transform(self.labels[node.test_index_all, node.level])
         )
         return classifier
 
@@ -1049,8 +1051,8 @@ class HierarchicalClassifier(object):
             selector = SelectKBest(mutual_info_classif, k=node.features_number)
 
             selector.fit(
-                self.training_set[node.train_index, :self.dataset_features_number],
-                node.label_encoder.transform(self.ground_truth[node.train_index, node.level])
+                self.features[node.train_index],
+                node.label_encoder.transform(self.labels[node.train_index, node.level])
             )
 
             support = selector.get_support()
@@ -1069,7 +1071,7 @@ class HierarchicalClassifier(object):
     def train(self, node):
         # print(node.label_encoder.nom_to_cat)
 
-        if self.hidden_classes != '':
+        if len(self.hidden_classes) > 0:
             not_hidden_index = [i for i in node.train_index if self.labels[i, node.level] not in self.hidden_classes]
         else:
             not_hidden_index = node.train_index
@@ -1084,6 +1086,13 @@ class HierarchicalClassifier(object):
 
     # @profile
     def test(self, node):
+        if len(node.test_index) == 0:
+            return
+        print(len(node.test_index), node.test_index)
+        print(node.features_index)
+        node.classifier.set_oracle(
+            node.label_encoder.transform(self.labels[node.test_index, node.level])
+        )
         pred = node.label_encoder.inverse_transform(
             node.classifier.predict(self.features[node.test_index][:, node.features_index]))
         try:
@@ -1093,12 +1102,14 @@ class HierarchicalClassifier(object):
 
         for p, b, i in zip(pred, proba, node.test_index):
             self.predictions[i, node.level] = p
-        #     self.probability[i, node.level] = b
 
         self.write_pred(self.labels[node.test_index, node.level], pred, node.level, node.tag)
         self.write_proba(self.labels[node.test_index, node.level], proba, node.level, node.tag)
 
     def test_all(self, node):
+        node.classifier.set_oracle(
+            node.label_encoder.transform(self.labels[node.test_index_all, node.level])
+        )
         pred = node.label_encoder.inverse_transform(
             node.classifier.predict(self.features[node.test_index_all][:, node.features_index]))
         try:

@@ -24,7 +24,7 @@ benign_class = ''
 # Goal infos
 k = 10
 max_level_target = 0
-level_target = -1
+level_target = 0
 features_number = 0
 packets_number = 0
 starting_fold = 0
@@ -65,12 +65,14 @@ try:
         "[input_file=,levels_number=,max_level_target=,features_number=,packets_number=,\
             classifier_name=,configuration=,workers_number=,executors_number=,anomaly_class=,\
             epochs_number=,detector_name=,arbitrary_discriminator=,n_clusters=,hidden_classes=,\
-            benign_class=,nominal_features_index=,level_target=,buckets_number=]"
+            benign_class=,nominal_features_index=,level_target=,buckets_number=,starting_fold=,\
+            ending_fold=]"
     )
 except getopt.GetoptError:
     print(sys.argv[0], '-i <input_file> -n <levels_number> \
         (-f <features_number>|-p <packets_number>) -c <classifier_name> (-o <configuration_file>) \
-        (-w <workers_number> -x <executors_number>) (-a <anomaly_class> -e epochs_number -d detector_name) (-s arbitrary_discr) -O')
+        (-w <workers_number> -x <executors_number>) (-a <anomaly_class> -e epochs_number -d detector_name)\
+        (-s arbitrary_discr) -O')
     print(sys.argv[0], '-h (or --help) for a more careful help')
     sys.exit(2)
 for opt, arg in opts:
@@ -155,6 +157,9 @@ for opt, arg in opts:
 if anomaly_classes != '' or (benign_class != '' and hidden_classes == ''):
     anomaly = True
 
+anomaly_classes = [v for v in anomaly_classes.split(',') if v != '']
+hidden_classes = [v for v in hidden_classes.split(',') if v != '']
+
 # import_str variable contains initial character of name of used classifiers
 # it is used to import specific module
 import_str = ''
@@ -167,21 +172,19 @@ if config_file:
     with open(config_file) as f:
         config = json.load(f)
 
-    print(config)
-
     for node in config:
-        print(config[node])
-        if config[node]['c'] not in supported_classifiers:
+        classifier_class = config[node]['c'].split('_') [0]
+        if classifier_class not in supported_classifiers:
             print('Classifier not supported in configuration file\nList of available classifiers:\n')
-            for sc in np.sort(supported_classifiers.keys()):
+            for sc in np.sort(list(supported_classifiers.keys())):
                 print('-c ' + sc + '\t--->\t' + supported_classifiers[sc].split('_')[1] + '\t\timplemented in ' +
                       supported_classifiers[sc].split('_')[0])
             print('Configuration inserted:\n', config)
             sys.exit()
-        if config[node]['c'][0] not in import_str:
-            import_str += config[node]['c'][0]
-            if config[node]['c'][1] == 'k':
-                import_str += config[node]['c'][1]
+        if classifier_class[0] not in import_str:
+            import_str += classifier_class[0]
+            if classifier_class[1] == 'k':
+                import_str += classifier_class[1]
 
 else:
 
@@ -202,9 +205,6 @@ else:
     else:
         detector_class = detector_name
         detector_opts = []
-
-    anomaly_classes = [v for v in anomaly_classes.split(',') if v != '']
-    hidden_classes = [v for v in hidden_classes.split(',') if v != '']
 
     if classifier_class != '' and classifier_class not in supported_classifiers:
         print('Classifier not supported\nList of available classifiers:\n')
@@ -243,11 +243,6 @@ if not input_file.endswith('.arff') and not input_file.endswith('.csv') and not 
     sys.exit()
 
 if 'k' in import_str:
-    # For reproducibility
-    from tensorflow import set_random_seed, logging
-
-    set_random_seed(0)
-    logging.set_verbosity(logging.ERROR)
     deep = True
 
 if 'd' in import_str:
@@ -272,6 +267,7 @@ if 'd' in import_str:
 if 'w' in import_str:
     import core.wrappers.weka_wrapper
 
+    core.wrappers.weka_wrapper.jvm.set_log_level(core.wrappers.weka_wrapper.jvm.get_level('ERROR'))
     core.wrappers.weka_wrapper.jvm.start()
 
 if classifier_class == 'kc2dae':

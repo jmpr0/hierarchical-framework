@@ -66,6 +66,10 @@ class SklearnWekaWrapper(object):
 
         preds = np.vectorize(self._dict.get)(preds)
 
+        print(self.oracle)
+        print(preds)
+        input()
+
         return np.array(preds)
 
     def predict_proba(self, testing_set):
@@ -86,10 +90,18 @@ class SklearnWekaWrapper(object):
 
     def _sklearn2weka(self, features, labels=None):
 
+        # All weka datasets have to be a zero-based coding for the column of labels
+        # We can use non-aligned labels for training and testing because the labels
+        # in testing phase are only used to obtain performance, but not for preds.
+        # We compute performance off-line.
         labels_encoder = OrdinalEncoder()
         labels_nominal = labels_encoder.fit_transform(np.array(labels).reshape(-1, 1))
 
-        if not hasattr(self, 'dict') and labels is not None:
+        labels_column = np.reshape(labels_nominal, [labels_nominal.shape[0], 1])
+
+        # TODO: find another way to do the same
+        # The follow is used to assign the value of _dict only in training phase
+        if not hasattr(self, '_dict') and labels is not None:
 
             dict = {}
 
@@ -98,8 +110,6 @@ class SklearnWekaWrapper(object):
                     dict[nominal.item(0)] = label
 
             self._dict = dict
-
-        labels_column = np.reshape(labels_nominal, [labels_nominal.shape[0], 1])
 
         weka_dataset = ndarray_to_instances(np.ascontiguousarray(features, dtype=np.float_), 'weka_dataset')
         weka_dataset.insert_attribute(Attribute.create_nominal('tag', [str(float(i)) for i in range(len(self._dict))]),

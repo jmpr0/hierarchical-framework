@@ -12,6 +12,12 @@ from sklearn.preprocessing import QuantileTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import StratifiedKFold
 
+# For reproducibility
+from tensorflow import set_random_seed, logging
+
+set_random_seed(0)
+logging.set_verbosity(logging.ERROR)
+
 import keras
 import cython
 from keras import optimizers
