@@ -1069,10 +1069,11 @@ class HierarchicalClassifier(object):
         return classifier
 
     def train(self, node):
+        # TODO: applying preprocessing per node
         node.features_index = feature_selection(
             self.features[node.train_index],
-            self.labels[node.train_index, node.level],
-            node,
+            node.label_encoder.transform(self.labels[node.train_index, node.level]),
+            node.features_number,
             self.dataset_features_number
         )
         node.test_duration = node.classifier.fit(

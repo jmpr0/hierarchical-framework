@@ -15,7 +15,7 @@ def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
         pass
     elif CUSTOM in mode:
         ohe(X, nominal_features_index)
-    elif FLATTEN in mode:
+    if FLATTEN in mode:
         X = sparse_flattening(X)
     return X
 
@@ -90,21 +90,18 @@ def apply_benign_hiddens(X, target_index, benign_class, hidden_classes):
 
 # NON APPLICARE LA CAZZO DI FEATURES SELECTION SUPERVISIONATA QUANDO FAI ANOMALY DETECTION
 # PORCODDIO
-def feature_selection(X, y, node, dataset_features_number):
-    node.features_index = []
+def feature_selection(X, y, features_number, dataset_features_number):
+    features_index = []
     # TODO: does not work with onehotencoded and with the new names of dataset
-    if node.features_number != 0 and node.features_number < dataset_features_number:
-        selector = SelectKBest(mutual_info_classif, k=node.features_number)
-        selector.fit(
-            X[node.train_index],
-            node.label_encoder.transform(y[node.train_index, node.level])
-        )
+    if features_number != 0 and features_number < dataset_features_number:
+        selector = SelectKBest(mutual_info_classif, k=features_number)
+        selector.fit(X, y)
         support = selector.get_support()
-        node.features_index = [i for i, v in enumerate(support) if v]
-    else:
-        if node.packets_number == 0:
-            node.features_index = range(dataset_features_number)
-        else:
-            node.features_index = np.r_[0:node.packets_number,
-                             dataset_features_number / 2:dataset_features_number / 2 + node.packets_number]
-    return node.features_index
+        features_index = [i for i, v in enumerate(support) if v]
+    # else:
+    #     if node.packets_number == 0:
+    #         node.features_index = range(dataset_features_number)
+    #     else:
+    #         node.features_index = np.r_[0:node.packets_number,
+    #                          dataset_features_number / 2:dataset_features_number / 2 + node.packets_number]
+    return features_index
