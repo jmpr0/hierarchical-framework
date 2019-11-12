@@ -26,10 +26,10 @@ Ex2) Custom configuration for each node - `python3 HierarchicalClassifierX.py -i
 
 Input description
 
--i Dataset file name (can be ARFF, CSV, or PICKLE (custom))
+-i Dataset file name (can be ARFF, CSV, or PICKLE (custom))  
 -n Hierarchy depth (number of layers of labels)
 
--c Classifier model
+-c Classifier model  
 -f Number of features (if less then the total number of features, script applies per-node feature selection)
 
 -o Configuration JSON file
