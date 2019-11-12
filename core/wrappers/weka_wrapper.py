@@ -39,8 +39,6 @@ class SklearnWekaWrapper(object):
 
     def fit(self, training_set, ground_truth):
 
-        print(np.unique(ground_truth))
-
         self.ground_truth = ground_truth
 
         training_set = self._sklearn2weka(training_set, self.ground_truth)
@@ -65,10 +63,6 @@ class SklearnWekaWrapper(object):
             preds.append(pred)
 
         preds = np.vectorize(self._dict.get)(preds)
-
-        print(self.oracle)
-        print(preds)
-        input()
 
         return np.array(preds)
 

@@ -10,6 +10,13 @@ import numpy as np
 from core.hierarchical_classifier import HierarchicalClassifier
 from configs import *
 
+import pyfiglet
+from colorama import Fore, Back, Style
+
+title = pyfiglet.figlet_format(" Hier Frame ", font='bulbhead')
+print(Fore.RED, Back.WHITE)
+print(title, ''.join([' ']*int(len(title)/4-3)), Style.RESET_ALL)
+
 os.environ["DISPLAY"] = ":0"  # used to show xming display
 
 # Dataset infos
@@ -169,6 +176,7 @@ if config_file:
         print('config file must have .json extention')
         sys.exit()
 
+    print('\nLoading configuration file ' + config_file + '\n')
     with open(config_file) as f:
         config = json.load(f)
 
@@ -314,7 +322,9 @@ if input_is_image:
 elif early:
     hierarchical_classifier.load_early_dataset()
 else:
+    print('\nLoading input file ' + input_file + '\n')
     hierarchical_classifier.load_dataset(memoryless)
+print('\nStarting %sFold Validation\n' % k)
 hierarchical_classifier.kfold_validation(k=k, starting_fold=starting_fold, ending_fold=ending_fold)
 
 if 'w' in import_str:

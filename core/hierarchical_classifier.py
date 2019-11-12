@@ -3,6 +3,7 @@
 import os
 import pickle as pk
 from threading import Thread
+import time
 
 import arff
 import networkx as nx
@@ -323,9 +324,6 @@ class HierarchicalClassifier(object):
 
     def load_image(self):
 
-        print('\nCaricando ' + self.input_file + ' con opts -f' + str(
-            self.features_number) + ' -c' + self.classifier_class + '\n')
-
         with open(self.input_file, 'rb') as dataset_pk:
             dataset = pk.load(dataset_pk)
 
@@ -338,9 +336,6 @@ class HierarchicalClassifier(object):
         self.labels = data[:, self.dataset_features_number:]
 
     def load_dataset(self, memoryless):
-
-        print('\nCaricando ' + self.input_file + ' con opts -f' + str(
-            self.features_number) + ' -c' + self.classifier_class + '\n')
 
         if not memoryless and os.path.exists('%s.yetpreprocessed.pickle' % self.input_file):
             self.features_names, self.nominal_features_index, self.numerical_features_index, self.fine_nominal_features_index, \
@@ -454,7 +449,6 @@ class HierarchicalClassifier(object):
             # Multiclass AD - OneVSAll
             # TODO: now it works only on one level dataset for AD, where when multiclass and anomaly is specified, anomaly goes to '1' and others to '0'
             # if self.anomaly and np.unique(data[:,self.attributes_number-1]).shape[0] > 2: <---- BUG??
-            # print(self.anomaly, self.anomaly_classes)
             if self.anomaly and len(self.anomaly_classes) > 0:
                 for anomaly_class in self.anomaly_classes:
                     data[np.where(data[:,
@@ -488,13 +482,9 @@ class HierarchicalClassifier(object):
                         self.features_number, self.anomaly_class, self.features, self.labels
                     ]
                     , open('%s.yetpreprocessed.pickle' % self.input_file, 'wb'), pk.HIGHEST_PROTOCOL)
-        # print(self.numerical_features_index, self.nominal_features_index, self.fine_nominal_features_index)
-        # input()
 
     def load_early_dataset(self):
 
-        print('\nCaricando ' + self.input_file + ' con opts -f' + str(
-            self.features_number) + ' -c' + self.classifier_class + '\n')
         # load .arff file
         if self.input_file.lower().endswith('.pickle'):
             with open(self.input_file, 'rb') as dataset_pk:
@@ -592,7 +582,6 @@ class HierarchicalClassifier(object):
 
     def initialize_nodes(self, fold_cnt, train_index, test_index):
 
-        print('\nInitializing nodes of fold n.%s\n' % fold_cnt)
         nodes = []
 
         root = TreeNode()
@@ -606,7 +595,6 @@ class HierarchicalClassifier(object):
         root.children_tags = [tag for tag in np.unique((self.labels[:, root.level])) if tag not in self.hidden_classes]
         root.children_number = len(root.children_tags)
         root.label_encoder = MyLabelEncoder()
-        # print(root.children_tags, self.hidden_classes)
         root.label_encoder.fit(root.children_tags + self.hidden_classes)
 
         # Apply config to set number of features
@@ -618,8 +606,11 @@ class HierarchicalClassifier(object):
             root.classifier_class = self.config[root.tag + '_' + str(root.level + 1)]['c']
             classifier_to_call = getattr(self, supported_classifiers[root.classifier_class])
 
-            print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
-                  'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
+            # print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
+                  # 'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
+            print(
+                'Initialize node tag %s at level %s with options: --features_number=%s --classifier_class=%s                            '
+                  % (root.tag, root.level+1, root.features_number, root.classifier_class), end='\r')
         else:
             # Assign encoded features number to work with onehotencoder
             root.features_number = self.features_number
@@ -632,14 +623,20 @@ class HierarchicalClassifier(object):
             if self.anomaly and root.children_number == 2:
                 root.detector_class = self.detector_class
                 root.detector_opts = self.detector_opts
-                print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
-                      'd', root.detector_class, 'train_test_len', len(root.train_index), len(root.test_index))
+                # print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
+                #       'd', root.detector_class, 'train_test_len', len(root.train_index), len(root.test_index))
+                print(
+                    'Initialize node tag %s at level %s with options: --features_number=%s --classifier_class=%s                            '
+                      % (root.tag, root.level+1, root.features_number, root.detector_class), end='\r')
                 classifier_to_call = self._AnomalyDetector
             else:
                 root.classifier_class = self.classifier_class
                 root.classifier_opts = self.classifier_opts
-                print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
-                      'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
+                # print('\nconfig', 'tag', root.tag, 'level', root.level, 'f', root.features_number,
+                #       'c', root.classifier_class, 'train_test_len', len(root.train_index), len(root.test_index))
+                print(
+                    'Initialize node tag %s at level %s with options: --features_number=%s --classifier_class=%s                            '
+                      % (root.tag, root.level+1, root.features_number, root.classifier_class), end='\r')
                 classifier_to_call = getattr(self, supported_classifiers[root.classifier_class])
 
         root.classifier = classifier_to_call(node=root)
@@ -647,6 +644,7 @@ class HierarchicalClassifier(object):
         # Creating hierarchy recursively, if max level target is set, classification continue while reaches it
         # If it's not set, it is equal to levels number. If level target is set, we have only the analysis at selected level.
         if root.level < self.max_level_target - 1 and root.children_number > 0:
+            # print('\nInitializing nodes of Fold #%s\n' % fold_cnt)
             self.initialize_nodes_recursive(root, nodes)
 
         return nodes
@@ -681,13 +679,17 @@ class HierarchicalClassifier(object):
                 elif 'p' in self.config[child.tag + '_' + str(child.level + 1)]:
                     child.packets_number = self.config[child.tag + '_' + str(child.level + 1)]['p']
                 child.classifier_class = self.config[child.tag + '_' + str(child.level + 1)]['c']
-                print('config', 'tag', child.tag, 'level', child.level, 'f', child.features_number,
-                      'c', child.classifier_class, 'd', child.detector_class, 'o', child.detector_opts,
-                      'train_test_len', len(child.train_index), len(child.test_index))
+                # print('config', 'tag', child.tag, 'level', child.level, 'f', child.features_number,
+                #       'c', child.classifier_class, 'd', child.detector_class, 'o', child.detector_opts,
+                #       'train_test_len', len(child.train_index), len(child.test_index))
+                print('Initialize node tag %s at level %s with options: --features_number=%s --classifier_class=%s                      '
+                      % (child.tag, child.level+1, child.features_number, child.classifier_class), end='\r')
             else:
                 child.features_number = self.features_number
                 # child.encoded_features_number = self.encoded_dataset_features_number
                 child.packets_number = self.packets_number
+                print('Initialize node tag %s at level %s with options: --features_number=%s --classifier_class=%s                      '
+                      % (child.tag, child.level+1, child.features_number, child.classifier_class), end='\r')
 
             if self.anomaly and child.children_number == 2:
                 child.detector_class = self.detector_class
@@ -695,8 +697,8 @@ class HierarchicalClassifier(object):
             else:
                 child.classifier_class = self.classifier_class
                 child.classifier_opts = self.classifier_opts
-            print('config', 'tag', child.tag, 'level', child.level, 'f', child.features_number,
-                  'c', child.classifier_class, 'train_test_len', len(child.train_index), len(child.test_index))
+            # print('config', 'tag', child.tag, 'level', child.level, 'f', child.features_number,
+            #       'c', child.classifier_class, 'train_test_len', len(child.train_index), len(child.test_index))
 
             if self.anomaly and child.children_number == 2:
                 classifier_to_call = self._AnomalyDetector
@@ -715,9 +717,6 @@ class HierarchicalClassifier(object):
         classifiers_per_fold = []
         # bucket_times_per_fold = []
 
-        print('\n***\nStart testing with ' + str(self.k) + 'Fold cross-validation -f' + str(
-            self.features_number) + ' -c' + self.classifier_class + '\n***\n')
-
         skf = StratifiedKFold(n_splits=self.k, shuffle=True)
 
         # Testing set of each fold are not overlapping, we use only one array to maintain all the predictions over the folds
@@ -734,12 +733,17 @@ class HierarchicalClassifier(object):
             if fold_cnt < starting_fold or fold_cnt > ending_fold - 1:
                 continue
 
-            print('\nStarting fold n.%s\n' % fold_cnt)
+            print('\nStarting Fold #%s\n' % (fold_cnt+1))
 
             self.global_folds_writed = [False] * self.levels_number
             self.global_folds_writed_all = [False] * self.levels_number
 
             nodes = self.initialize_nodes(fold_cnt, train_index, test_index)
+
+            print(
+                'Nodes initialization DONE!                                                                                       ',
+                end='\r')
+            time.sleep(1)
 
             # Defining complexity for each node
             for node in [n for n in nodes if n.children_number > 1]:
@@ -758,7 +762,8 @@ class HierarchicalClassifier(object):
                 # buckets are launched in parallel, nodes in a bucket are trained sequentially
                 def parallel_train(bucket_nodes):
                     for node in bucket_nodes:
-                        print('Train node %s %s_%s' % (node, node.tag, node.level))
+                        print('Training node %s_%s                                                                                              '
+                              % (node.tag, node.level+1), end='\r')
                         self.train(node)
 
                 threads = []
@@ -776,8 +781,13 @@ class HierarchicalClassifier(object):
                                     [sorting_index[j] for j in bucket_index]]
                     for node in bucket_nodes:
                         if node.children_number > 1:
-                            print('Train node %s %s_%s' % (node, node.tag, node.level))
+                            print('Training node %s_%s                                                                                              '
+                                  % (node.tag, node.level+1), end='\r')
                             self.train(node)
+
+            print('Nodes training DONE!                                                                                       ',
+                end='\r')
+            time.sleep(1)
 
             bucket_times = []
             for bucket_index in bucket_indexes:
@@ -788,23 +798,37 @@ class HierarchicalClassifier(object):
             # Iterative testing_all, it is parallelizable in various ways
             for node in nodes:
                 if node.children_number > 1:
-                    print('Testing (all) node %s %s_%s' % (node, node.tag, node.level))
+                    print('Testing (all) node %s_%s                                                                                         '
+                          % (node.tag, node.level+1), end='\r')
                     self.write_fold(node.level, node.tag, node.children_tags, _all=True)
                     self.test_all(node)
+            print('Nodes testing (all) DONE!                                                                                       ',
+                end='\r')
+            time.sleep(1)
 
             # Recursive testing, each level is parallelizable and depends on previous level predictions
             root = nodes[0]
-            print('Testing node %s %s_%s' % (root, root.tag, root.level))
+            print('Testing node %s_%s                                                                                               '
+                  % (root.tag, root.level+1), end='\r')
             self.write_fold(root.level, root.tag, root.children_tags)
             self.test(root)
             if root.level < self.max_level_target - 1 and root.children_number > 1:
                 self.test_recursive(root)
+            print(
+                'Nodes testing DONE!                                                                                       ',
+                end='\r')
+            time.sleep(1)
 
             # Writing unary class predictions
             for node in nodes:
                 if node.children_number == 1:
                     self.unary_class_results_inferring(node)
             classifiers_per_fold.append(nodes)
+
+            print('Fold #%s DONE!                                                                                            '
+                  % (fold_cnt + 1), end='\r')
+            time.sleep(1)
+            print('')
 
         # MEAN WEIGHT MODEL
         # if self.anomaly and self.deep:
@@ -902,7 +926,8 @@ class HierarchicalClassifier(object):
             child.test_index = [index for index in parent.test_index if
                                 self.predictions[index, parent.level] == child_tag]
             if child.children_number > 1:
-                print('Testing node %s %s_%s' % (child, child.tag, child.level))
+                print('Testing node %s_%s                                                                                               '
+                      % (child.tag, child.level+1), end='\r')
                 self.write_fold(child.level, child.tag, child.children_tags)
                 self.test(child)
                 if child.level < self.max_level_target - 1:
@@ -1081,15 +1106,15 @@ class HierarchicalClassifier(object):
             node.label_encoder.transform(self.labels[not_hidden_index, node.level])
         ).t_
 
-        print(node.test_duration)
+        print('Training %s_%s duration [s]: %s                                                                                  '
+              % (node.tag,node.level+1, node.test_duration), end='\r')
+        time.sleep(1)
         self.write_time(node.test_duration, node.level, node.tag)
 
     # @profile
     def test(self, node):
         if len(node.test_index) == 0:
             return
-        print(len(node.test_index), node.test_index)
-        print(node.features_index)
         node.classifier.set_oracle(
             node.label_encoder.transform(self.labels[node.test_index, node.level])
         )
