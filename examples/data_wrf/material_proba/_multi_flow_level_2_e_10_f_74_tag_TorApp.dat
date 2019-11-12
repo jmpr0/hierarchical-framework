@@ -35,3 +35,15 @@ Streaming 0.11 0.85 0.04
 @fold Actual Browsing Streaming Torrent
 Streaming 0.52 0.44 0.04
 Torrent 0.0 0.06 0.94
+@fold Actual Browsing Streaming Torrent
+Browsing 0.68 0.28 0.04
+Torrent 0.0 0.06 0.94
+Streaming 0.09 0.54 0.37
+@fold Actual Browsing Streaming Torrent
+Browsing 0.96 0.03 0.01
+Streaming 0.19 0.79 0.02
+Torrent 0.05 0.21 0.74
+@fold Actual Browsing Streaming Torrent
+Torrent 0.01 0.06 0.93
+Streaming 0.32 0.66 0.02
+Browsing 0.94 0.05 0.01

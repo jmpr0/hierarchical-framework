@@ -80,3 +80,33 @@ IRC_App 0.25 0.2 0.17 0.3 0.08
 Eepsites_App 0.15 0.21 0.06 0.47 0.11
 IRC_App 0.25 0.21 0.01 0.16 0.37
 ParticipatingTunnels_App 0.04 0.09 0.0 0.18 0.69
+@fold Actual Eepsites_App ExploratoryTunnels_App I2PSNARK_App IRC_App ParticipatingTunnels_App
+I2PSNARK_App 0.07 0.15 0.67 0.06 0.05
+IRC_App 0.16 0.08 0.07 0.65 0.04
+IRC_App 0.25 0.23 0.09 0.39 0.04
+ExploratoryTunnels_App 0.2 0.15 0.18 0.28 0.19
+IRC_App 0.13 0.21 0.06 0.51 0.09
+ParticipatingTunnels_App 0.32 0.09 0.03 0.25 0.31
+Eepsites_App 0.28 0.11 0.35 0.17 0.09
+Eepsites_App 0.26 0.12 0.1 0.44 0.08
+ParticipatingTunnels_App 0.16 0.24 0.09 0.49 0.02
+@fold Actual Eepsites_App ExploratoryTunnels_App I2PSNARK_App IRC_App ParticipatingTunnels_App
+IRC_App 0.43 0.02 0.04 0.4 0.11
+ExploratoryTunnels_App 0.32 0.15 0.03 0.36 0.14
+IRC_App 0.24 0.09 0.01 0.57 0.09
+Eepsites_App 0.26 0.03 0.37 0.25 0.09
+Eepsites_App 0.13 0.27 0.04 0.41 0.15
+IRC_App 0.08 0.21 0.0 0.62 0.09
+ParticipatingTunnels_App 0.33 0.18 0.01 0.19 0.29
+I2PSNARK_App 0.4 0.08 0.21 0.27 0.04
+ParticipatingTunnels_App 0.16 0.3 0.0 0.35 0.19
+@fold Actual Eepsites_App ExploratoryTunnels_App I2PSNARK_App IRC_App ParticipatingTunnels_App
+ParticipatingTunnels_App 0.09 0.08 0.02 0.09 0.72
+IRC_App 0.11 0.11 0.0 0.71 0.07
+I2PSNARK_App 0.29 0.12 0.5 0.04 0.05
+Eepsites_App 0.07 0.15 0.02 0.47 0.29
+ExploratoryTunnels_App 0.1 0.11 0.02 0.63 0.14
+IRC_App 0.15 0.11 0.0 0.64 0.1
+Eepsites_App 0.3 0.04 0.01 0.55 0.1
+IRC_App 0.06 0.25 0.0 0.58 0.11
+ParticipatingTunnels_App 0.47 0.19 0.07 0.22 0.05

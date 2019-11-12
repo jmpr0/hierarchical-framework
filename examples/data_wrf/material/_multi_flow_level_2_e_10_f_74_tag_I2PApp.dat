@@ -27,3 +27,13 @@ I2PSNARK_App I2PSNARK_App
 @fold Actual Pred
 I2PSNARK_App I2PSNARK_App
 I2PSNARK_App80BW IRC_App
+@fold Actual Pred
+IRC_App IRC_App
+IRC_App IRC_App
+ParticipatingTunnels_App Eepsites_App
+@fold Actual Pred
+IRC_App Eepsites_App
+IRC_App IRC_App
+I2PSNARK_App Eepsites_App
+@fold Actual Pred
+Eepsites_App IRC_App
