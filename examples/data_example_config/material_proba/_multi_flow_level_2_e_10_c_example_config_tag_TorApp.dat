@@ -1,0 +1,49 @@
+@fold Actual Browsing Streaming Torrent
+Torrent 0.01 0.04 0.95
+Torrent 0.0 0.01 0.99
+Browsing 0.82 0.16 0.02
+Browsing 0.77 0.15 0.08
+Streaming 0.02 0.93 0.05
+Streaming 0.06 0.94 0.0
+@fold Actual Browsing Streaming Torrent
+Streaming 0.0 1.0 0.0
+Streaming 0.0 0.97 0.03
+Browsing 0.99 0.01 0.0
+Torrent 0.0 0.0 1.0
+@fold Actual Browsing Streaming Torrent
+Torrent 0.0 0.08 0.92
+Browsing 1.0 0.0 0.0
+Browsing 1.0 0.0 0.0
+Streaming 0.0 0.94 0.06
+Torrent 0.0 0.01 0.99
+Streaming 0.0 0.94 0.06
+@fold Actual Browsing Streaming Torrent
+Browsing 0.93 0.05 0.02
+Torrent 0.02 0.24 0.74
+Streaming 0.0 1.0 0.0
+Streaming 0.0 1.0 0.0
+I2PSNARK_App 0.86 0.08 0.06
+Torrent 0.0 0.1 0.9
+@fold Actual Browsing Streaming Torrent
+Streaming 0.01 0.65 0.34
+Browsing 0.9 0.1 0.0
+Torrent 0.0 0.02 0.98
+@fold Actual Browsing Streaming Torrent
+Torrent 0.05 0.11 0.84
+Browsing 0.32 0.56 0.12
+Streaming 0.01 0.95 0.04
+@fold Actual Browsing Streaming Torrent
+Streaming 0.69 0.31 0.0
+Torrent 0.0 0.0 1.0
+@fold Actual Browsing Streaming Torrent
+Browsing 0.93 0.05 0.02
+Torrent 0.0 0.03 0.97
+Streaming 0.02 0.77 0.21
+@fold Actual Browsing Streaming Torrent
+Browsing 1.0 0.0 0.0
+Streaming 0.33 0.66 0.01
+Torrent 0.01 0.13 0.86
+@fold Actual Browsing Streaming Torrent
+Torrent 0.0 0.06 0.94
+Streaming 0.32 0.68 0.0
+Browsing 0.97 0.02 0.01

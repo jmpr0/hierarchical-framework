@@ -1,0 +1,17 @@
+@fold Actual Eepsites_App ExploratoryTunnels_App I2PSNARK_App IRC_App ParticipatingTunnels_App
+ParticipatingTunnels_App 0.16 0.14 0.07 0.47 0.16
+IRC_App 0.07 0.27 0.04 0.58 0.04
+ExploratoryTunnels_App 0.04 0.04 0.02 0.66 0.24
+IRC_App 0.12 0.2 0.0 0.5 0.18
+@fold Actual Eepsites_App ExploratoryTunnels_App I2PSNARK_App IRC_App ParticipatingTunnels_App
+IRC_App 0.16 0.07 0.02 0.72 0.03
+I2PSNARK_App 0.09 0.03 0.87 0.0 0.01
+IRC_App 0.14 0.15 0.04 0.57 0.1
+IRC_App 0.1 0.17 0.03 0.51 0.19
+IRC_App0BW 0.02 0.06 0.0 0.51 0.41
+Eepsites_App 0.21 0.05 0.0 0.33 0.41
+Eepsites_App80BW 0.43 0.13 0.03 0.26 0.15
+@fold Actual Eepsites_App ExploratoryTunnels_App I2PSNARK_App IRC_App ParticipatingTunnels_App
+IRC_App 0.13 0.19 0.01 0.56 0.11
+Eepsites_App 0.51 0.03 0.02 0.4 0.04
+ExploratoryTunnels_App 0.12 0.09 0.16 0.54 0.09
