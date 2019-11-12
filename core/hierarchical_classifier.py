@@ -548,7 +548,7 @@ class HierarchicalClassifier(object):
 
         root.fold = fold_cnt
         root.level = self.level_target
-        root.train_index = [index for index in train_index if self.labels[index][:, root.level] not in self.hidden_classes]
+        root.train_index = [index for index in train_index if self.labels[index, root.level] not in self.hidden_classes]
         root.test_index = test_index
         root.test_index_all = test_index
         root.children_tags = [tag for tag in np.unique((self.labels[:, root.level])) if tag not in self.hidden_classes]
@@ -620,11 +620,11 @@ class HierarchicalClassifier(object):
             child.tag = parent.children_tags[i]
             child.parent = parent
 
-            child.train_index = [index for index in parent.train_index if self.labels[index][:, parent.level] == child.tag
-                                 and self.labels[index][:, child.level] not in self.hidden_classes]
+            child.train_index = [index for index in parent.train_index if self.labels[index, parent.level] == child.tag
+                                 and self.labels[index, child.level] not in self.hidden_classes]
             child.test_index_all = [index for index in parent.test_index_all if
-                                    self.labels[index][:, parent.level] == child.tag]
-            child.children_tags = [tag for tag in np.unique((self.labels[child.train_index][:, child.level])) if
+                                    self.labels[index, parent.level] == child.tag]
+            child.children_tags = [tag for tag in np.unique((self.labels[child.train_index, child.level])) if
                                    tag not in self.hidden_classes]
             child.children_number = len(child.children_tags)
             # other_childs_children_tags correspond to the possible labels that in testing phase could arrive to the node
@@ -912,7 +912,7 @@ class HierarchicalClassifier(object):
 
         self.write_fold(node.level, node.tag, node.children_tags)
         self.write_fold(node.level, node.tag, node.children_tags, _all=True)
-        self.write_pred(self.labels[node.test_index][:, node.level], [node.tag] * len(node.test_index), node.level,
+        self.write_pred(self.labels[node.test_index, node.level], [node.tag] * len(node.test_index), node.level,
                         node.tag)
         self.write_pred(self.labels[node.test_index_all][:, node.level], [node.tag] * len(node.test_index_all), node.level,
                         node.tag, True)
@@ -934,7 +934,7 @@ class HierarchicalClassifier(object):
         #     self.prediction_all[index, node.level] = node.tag
         #     self.probability_all[index, node.level] = 0.
 
-        self.write_proba(self.labels[node.test_index][:, node.level], [proba_base] * len(node.test_index), node.level,
+        self.write_proba(self.labels[node.test_index, node.level], [proba_base] * len(node.test_index), node.level,
                          node.tag)
         self.write_proba(self.labels[node.test_index_all][:, node.level], [proba_base] * len(node.test_index_all),
                          node.level, node.tag, True)
@@ -1003,7 +1003,7 @@ class HierarchicalClassifier(object):
         # # Features selection
         # node.features_index = self.feature_selection(node)
         classifier.set_oracle(
-            node.label_encoder.transform(self.labels[node.test_index][:, node.level])
+            node.label_encoder.transform(self.labels[node.test_index, node.level])
         )
         return classifier
 
@@ -1062,13 +1062,13 @@ class HierarchicalClassifier(object):
     def train(self, node):
         node.features_index = feature_selection(
             self.features[node.train_index],
-            self.labels[node.train_index][:, node.level],
+            self.labels[node.train_index, node.level],
             node,
             self.dataset_features_number
         )
         node.test_duration = node.classifier.fit(
             self.features[node.train_index][:, node.features_index],
-            node.label_encoder.transform(self.labels[node.train_index][:, node.level])
+            node.label_encoder.transform(self.labels[node.train_index, node.level])
         ).t_
         print(
             'Training %s_%s duration [s]: %s                                                                                  '
@@ -1081,7 +1081,7 @@ class HierarchicalClassifier(object):
         if len(node.test_index) == 0:
             return
         node.classifier.set_oracle(
-            node.label_encoder.transform(self.labels[node.test_index][:, node.level])
+            node.label_encoder.transform(self.labels[node.test_index, node.level])
         )
         pred = node.label_encoder.inverse_transform(
             node.classifier.predict(self.features[node.test_index][:, node.features_index]))
@@ -1093,8 +1093,8 @@ class HierarchicalClassifier(object):
         for p, b, i in zip(pred, proba, node.test_index):
             self.predictions[i, node.level] = p
 
-        self.write_pred(self.labels[node.test_index][:, node.level], pred, node.level, node.tag)
-        self.write_proba(self.labels[node.test_index][:, node.level], proba, node.level, node.tag)
+        self.write_pred(self.labels[node.test_index, node.level], pred, node.level, node.tag)
+        self.write_proba(self.labels[node.test_index, node.level], proba, node.level, node.tag)
 
     def test_all(self, node):
         node.classifier.set_oracle(
