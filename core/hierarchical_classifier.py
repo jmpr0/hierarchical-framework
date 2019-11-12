@@ -28,6 +28,7 @@ from sklearn.tree import DecisionTreeClassifier
 from .utils.preprocessing import apply_anomalies
 from .utils.preprocessing import apply_benign_hiddens
 from .utils.preprocessing import feature_selection
+import core.utils.preprocessing
 
 eps = np.finfo(float).eps
 
@@ -390,6 +391,12 @@ class HierarchicalClassifier(object):
                                              dataset['attributes'][i][1] in [u'NUMERIC', u'REAL']]
             self.fine_nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
                                                 dataset['attributes'][i][1] in [u'SPARRAY']]
+
+            # Preprocessing
+            mode = core.utils.preprocessing.CUSTOM
+            if not self.deep:
+                mode += '-' + core.utils.preprocessing.FLATTEN
+            data = core.utils.preprocessing.preprocess_dataset(data, self.nominal_features_index, mode)
 
             # Nominal features index should contains only string features that need to be processed with a one hot encoding.
             # These kind of features will be treated as sparse array, if deep learning models are used.

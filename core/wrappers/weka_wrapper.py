@@ -6,14 +6,16 @@ from weka.core.dataset import Attribute
 from weka.core.converters import ndarray_to_instances
 import weka.core.jvm as jvm
 
-import core.utils.preprocessing
+# import core.utils.preprocessing
 
 
 class SklearnWekaWrapper(object):
 
-    def __init__(self, classifier_name, nominal_features_index):
+    def __init__(self, classifier_name
+                 # , nominal_features_index
+                 ):
 
-        self.nominal_features_index = nominal_features_index
+        # self.nominal_features_index = nominal_features_index
 
         # Defaults
         class_name = 'weka.classifiers.trees.RandomForest'
@@ -44,8 +46,8 @@ class SklearnWekaWrapper(object):
 
     def fit(self, training_set, ground_truth):
 
-        self.nominal_encoder = core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
-        training_set = core.utils.preprocessing.sparse_flattening(training_set)
+        # self.nominal_encoder = core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
+        # training_set = core.utils.preprocessing.sparse_flattening(training_set)
 
         self.ground_truth = ground_truth
 
@@ -62,8 +64,8 @@ class SklearnWekaWrapper(object):
 
     def predict(self, testing_set):
 
-        core.utils.preprocessing.ohe(testing_set, self.nominal_features_index, self.nominal_encoder)
-        testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
+        # core.utils.preprocessing.ohe(testing_set, self.nominal_features_index, self.nominal_encoder)
+        # testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
 
         testing_set = self._sklearn2weka(testing_set, self.oracle)
         testing_set.class_is_last()

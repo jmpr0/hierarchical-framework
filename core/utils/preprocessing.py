@@ -5,11 +5,19 @@ from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif
 
 
-def preprocess_dataset(mode='classical'):
-    if mode == 'classical':
+CLASSIC = 'classic'
+CUSTOM = 'custom'
+FLATTEN = 'flatten'
+
+
+def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
+    if CLASSIC in mode:
         pass
-    elif mode == 'other':
-        pass
+    elif CUSTOM in mode:
+        ohe(X, nominal_features_index)
+    elif FLATTEN in mode:
+        X = sparse_flattening(X)
+    return X
 
 
 def ohe(X, nominal_features_index, features_encoders=None):

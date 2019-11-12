@@ -275,6 +275,7 @@ if 'd' in import_str:
 if 'w' in import_str:
     import core.wrappers.weka_wrapper
 
+    # set_log_level and get_level are "PEZZOTTO"s on the original core.wrappers.weka_wrapper.jvm package
     core.wrappers.weka_wrapper.jvm.set_log_level(core.wrappers.weka_wrapper.jvm.get_level('ERROR'))
     core.wrappers.weka_wrapper.jvm.start()
 
