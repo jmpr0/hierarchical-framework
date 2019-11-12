@@ -159,9 +159,13 @@ class SklearnSparkWrapper(object):
 
     def predict(self, testing_set):
 
+        core.utils.preprocessing.ohe(testing_set, self.nominal_features_index)
+
         if self.is_keras:
             nom_testing_set, num_testing_set = self.keras_wrapper.split_nom_num_features(testing_set)
             testing_set = [num_testing_set] + nom_testing_set
+        else:
+            testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
 
         testing_set = self._sklearn2spark(testing_set)
         if self.scale:

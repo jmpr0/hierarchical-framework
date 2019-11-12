@@ -18,6 +18,7 @@ class SklearnWekaWrapper(object):
         # Defaults
         class_name = 'weka.classifiers.trees.RandomForest'
         options = None
+        self.proba = None
 
         if classifier_name == 'wrf':
             class_name = 'weka.classifiers.trees.RandomForest'
@@ -61,29 +62,30 @@ class SklearnWekaWrapper(object):
 
     def predict(self, testing_set):
 
+        core.utils.preprocessing.ohe(testing_set, self.nominal_features_index)
+        testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
+
         testing_set = self._sklearn2weka(testing_set, self.oracle)
         testing_set.class_is_last()
 
         preds = []
+        dists = []
         for index, inst in enumerate(testing_set):
             pred = self._classifier.classify_instance(inst)
+            dist = self._classifier.distribution_for_instance(inst)
             preds.append(pred)
+            dists.append(dist)
 
         preds = np.vectorize(self._dict.get)(preds)
+        self.proba = dists
 
         return np.array(preds)
 
     def predict_proba(self, testing_set):
 
-        testing_set = self._sklearn2weka(testing_set, self.oracle)
-        testing_set.class_is_last()
-
-        dists = []
-        for index, inst in enumerate(testing_set):
-            dist = self._classifier.distribution_for_instance(inst)
-            dists.append(dist)
-
-        return np.array(dists)
+        if self.proba is None:
+            self.predict(testing_set)
+        return self.proba
 
     def set_oracle(self, oracle):
 

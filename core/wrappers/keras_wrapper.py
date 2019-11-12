@@ -982,6 +982,9 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def predict(self, X, y=None):
 
+        core.utils.preprocessing.ohe(X, self.nominal_features_index)
+        self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
+
         # X, nominal_features_index, numerical_features_index = self.expand_onehot_features(X)
         nom_X, num_X = self.split_nom_num_features(X)
         scaled_num_X = self.scaler.transform(num_X)
