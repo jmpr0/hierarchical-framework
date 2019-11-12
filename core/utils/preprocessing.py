@@ -12,10 +12,17 @@ def preprocess_dataset(mode='classical'):
         pass
 
 
-def ohe(X, nominal_features_index):
-    features_encoder = OneHotEncoder()
-    for i in nominal_features_index:
-        X[:, i] = [sp for sp in features_encoder.fit_transform(X[:, i].reshape(-1, 1))]
+def ohe(X, nominal_features_index, features_encoders=None):
+    if features_encoders is None:
+        features_encoders = []
+        for i in nominal_features_index:
+            features_encoder = OneHotEncoder()
+            X[:, i] = [sp for sp in features_encoder.fit_transform(X[:, i].reshape(-1, 1))]
+            features_encoders.append(features_encoder)
+        return features_encoders
+    else:
+        for i, features_encoder in zip(nominal_features_index, features_encoders):
+            X[:, i] = [sp for sp in features_encoder.transform(X[:, i].reshape(-1, 1))]
 
 
 def sparse_flattening(X):

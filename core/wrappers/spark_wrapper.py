@@ -117,7 +117,7 @@ class SklearnSparkWrapper(object):
 
     def fit(self, training_set, ground_truth):
 
-        core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
+        self.nominal_encoder = core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
 
         self.ground_truth = ground_truth
 
@@ -159,7 +159,7 @@ class SklearnSparkWrapper(object):
 
     def predict(self, testing_set):
 
-        core.utils.preprocessing.ohe(testing_set, self.nominal_features_index)
+        core.utils.preprocessing.ohe(testing_set, self.nominal_features_index, self.nominal_encoder)
 
         if self.is_keras:
             nom_testing_set, num_testing_set = self.keras_wrapper.split_nom_num_features(testing_set)

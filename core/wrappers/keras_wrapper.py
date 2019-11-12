@@ -166,7 +166,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             raise Exception('Invalid value for Shared Ray or for Grafting Depth.\n\
                 Permitted values are: S_r in [-1, Depth] and G_d in [0, Depth+1].')
 
-        core.utils.preprocessing.ohe(X, self.nominal_features_index)
+        self.nominal_encoder = core.utils.preprocessing.ohe(X, self.nominal_features_index)
         self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
 
         nom_X, num_X = self.split_nom_num_features(X)
@@ -982,7 +982,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def predict(self, X, y=None):
 
-        core.utils.preprocessing.ohe(X, self.nominal_features_index)
+        core.utils.preprocessing.ohe(X, self.nominal_features_index, self.nominal_encoder)
         self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
 
         # X, nominal_features_index, numerical_features_index = self.expand_onehot_features(X)
