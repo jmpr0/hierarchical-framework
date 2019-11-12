@@ -11,6 +11,7 @@ from sklearn.base import ClassifierMixin
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import StratifiedKFold
+import core.utils.preprocessing
 
 # For reproducibility
 from tensorflow import set_random_seed, logging
@@ -61,9 +62,7 @@ from keras.models import clone_model
 class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def __init__(self, depth='3', hidden_activation_function_name='elu', mode='n', sharing_ray='3', grafting_depth='0',
-                 compression_ratio='.1',
-                 model_class='kdae', epochs_number=10, numerical_features_length=None, nominal_features_lengths=None,
-                 num_classes=1,
+                 compression_ratio='.1', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
                  level=0, classify=False, weight_features=False,
                  arbitrary_discr=''):
@@ -111,8 +110,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.hidden_activation_function_name = hidden_activation_function_name
         self.hidden_activation_function = globals()[hidden_activation_function_name]
         self.model_class = model_class
-        self.numerical_features_length = numerical_features_length
-        self.nominal_features_lengths = nominal_features_lengths
+        self.numerical_features_length = None
+        self.nominal_features_lengths = None
         self.num_classes = num_classes
         self.nominal_features_index = nominal_features_index
         self.fine_nominal_features_index = fine_nominal_features_index
@@ -166,6 +165,9 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         if not -1 <= self.sharing_ray <= self.depth or not 0 <= self.grafting_depth <= self.depth + 1:
             raise Exception('Invalid value for Shared Ray or for Grafting Depth.\n\
                 Permitted values are: S_r in [-1, Depth] and G_d in [0, Depth+1].')
+
+        core.utils.preprocessing.ohe(X, self.nominal_features_index)
+        self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
 
         nom_X, num_X = self.split_nom_num_features(X)
 
