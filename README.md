@@ -23,3 +23,13 @@ The folder examples contains a subset of Anon17 dataset and a configuration file
 Ex1) Same configuration for each node - `python3 HierarchicalClassifierX.py -i Anon17_red.arff -n 3 -c wrf -f 74`
 
 Ex2) Custom configuration for each node - `python3 HierarchicalClassifierX.py -i Anon17_red.arff -n 3 -o example_config.json`
+
+Input description
+
+-i Dataset file name (can be ARFF, CSV, or PICKLE (custom))
+-n Hierarchy depth (number of layers of labels)
+
+-c Classifier model
+-f Number of features (if less then the total number of features, script applies per-node feature selection)
+
+-o Configuration JSON file
