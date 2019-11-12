@@ -11,7 +11,8 @@ from sklearn.base import ClassifierMixin
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import StratifiedKFold
-import core.utils.preprocessing
+
+# import core.utils.preprocessing
 
 # For reproducibility
 from tensorflow import set_random_seed, logging
@@ -64,8 +65,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, depth='3', hidden_activation_function_name='elu', mode='n', sharing_ray='3', grafting_depth='0',
                  compression_ratio='.1', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
-                 level=0, classify=False, weight_features=False,
-                 arbitrary_discr=''):
+                 level=0, classify=False, weight_features=False, arbitrary_discr=''):
 
         # print(depth, hidden_activation_function, mode, sharing_ray, grafting_depth, compression_ratio,
         # model_class, epochs_number, num_classes, fold, level, classify)
@@ -166,8 +166,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             raise Exception('Invalid value for Shared Ray or for Grafting Depth.\n\
                 Permitted values are: S_r in [-1, Depth] and G_d in [0, Depth+1].')
 
-        core.utils.preprocessing.ohe(X, self.nominal_features_index)
-        self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
+        # self.nominal_encoder = core.utils.preprocessing.ohe(X, self.nominal_features_index)
+        # self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
 
         nom_X, num_X = self.split_nom_num_features(X)
 
@@ -982,8 +982,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def predict(self, X, y=None):
 
-        core.utils.preprocessing.ohe(X, self.nominal_features_index)
-        self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
+        # core.utils.preprocessing.ohe(X, self.nominal_features_index, self.nominal_encoder)
+        # self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
 
         # X, nominal_features_index, numerical_features_index = self.expand_onehot_features(X)
         nom_X, num_X = self.split_nom_num_features(X)

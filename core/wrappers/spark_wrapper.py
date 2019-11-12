@@ -23,7 +23,7 @@ from distkeras.predictors import ModelPredictor
 from distkeras.transformers import OneHotTransformer
 
 from .keras_wrapper import SklearnKerasWrapper
-import core.utils.preprocessing
+# import core.utils.preprocessing
 
 
 class SingletonSparkSession(object):
@@ -117,7 +117,7 @@ class SklearnSparkWrapper(object):
 
     def fit(self, training_set, ground_truth):
 
-        core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
+        # self.nominal_encoder = core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
 
         self.ground_truth = ground_truth
 
@@ -131,7 +131,7 @@ class SklearnSparkWrapper(object):
                                     features_col='features', label_col='categorical_label',
                                     metrics=['categorical_accuracy'])
         else:
-            training_set = core.utils.preprocessing.sparse_flattening(training_set)
+            # training_set = core.utils.preprocessing.sparse_flattening(training_set)
             training_set = self._sklearn2spark(training_set, self.ground_truth)
         # print(self.ground_truth)
         # input()
@@ -159,13 +159,13 @@ class SklearnSparkWrapper(object):
 
     def predict(self, testing_set):
 
-        core.utils.preprocessing.ohe(testing_set, self.nominal_features_index)
+        # core.utils.preprocessing.ohe(testing_set, self.nominal_features_index, self.nominal_encoder)
 
         if self.is_keras:
             nom_testing_set, num_testing_set = self.keras_wrapper.split_nom_num_features(testing_set)
             testing_set = [num_testing_set] + nom_testing_set
-        else:
-            testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
+        # else:
+        #     testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
 
         testing_set = self._sklearn2spark(testing_set)
         if self.scale:

@@ -28,6 +28,7 @@ from sklearn.tree import DecisionTreeClassifier
 from .utils.preprocessing import apply_anomalies
 from .utils.preprocessing import apply_benign_hiddens
 from .utils.preprocessing import feature_selection
+import core.utils.preprocessing
 
 eps = np.finfo(float).eps
 
@@ -390,6 +391,12 @@ class HierarchicalClassifier(object):
                                              dataset['attributes'][i][1] in [u'NUMERIC', u'REAL']]
             self.fine_nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
                                                 dataset['attributes'][i][1] in [u'SPARRAY']]
+
+            # Preprocessing
+            mode = core.utils.preprocessing.CUSTOM
+            if not self.deep:
+                mode += '-' + core.utils.preprocessing.FLATTEN
+            data = core.utils.preprocessing.preprocess_dataset(data, self.nominal_features_index, mode)
 
             # Nominal features index should contains only string features that need to be processed with a one hot encoding.
             # These kind of features will be treated as sparse array, if deep learning models are used.
@@ -914,7 +921,7 @@ class HierarchicalClassifier(object):
         self.write_fold(node.level, node.tag, node.children_tags, _all=True)
         self.write_pred(self.labels[node.test_index, node.level], [node.tag] * len(node.test_index), node.level,
                         node.tag)
-        self.write_pred(self.labels[node.test_index_all][:, node.level], [node.tag] * len(node.test_index_all), node.level,
+        self.write_pred(self.labels[node.test_index_all, node.level], [node.tag] * len(node.test_index_all), node.level,
                         node.tag, True)
 
         if len(self.anomaly_classes) > 0:
@@ -936,7 +943,7 @@ class HierarchicalClassifier(object):
 
         self.write_proba(self.labels[node.test_index, node.level], [proba_base] * len(node.test_index), node.level,
                          node.tag)
-        self.write_proba(self.labels[node.test_index_all][:, node.level], [proba_base] * len(node.test_index_all),
+        self.write_proba(self.labels[node.test_index_all, node.level], [proba_base] * len(node.test_index_all),
                          node.level, node.tag, True)
 
     # TODO: does not apply preprocessing to dataset
@@ -1055,7 +1062,7 @@ class HierarchicalClassifier(object):
         # # Features selection
         # node.features_index = self.feature_selection(node)
         classifier.set_oracle(
-            node.label_encoder.transform(self.labels[node.test_index_all][:, node.level])
+            node.label_encoder.transform(self.labels[node.test_index_all, node.level])
         )
         return classifier
 
@@ -1098,7 +1105,7 @@ class HierarchicalClassifier(object):
 
     def test_all(self, node):
         node.classifier.set_oracle(
-            node.label_encoder.transform(self.labels[node.test_index_all][:, node.level])
+            node.label_encoder.transform(self.labels[node.test_index_all, node.level])
         )
         pred = node.label_encoder.inverse_transform(
             node.classifier.predict(self.features[node.test_index_all][:, node.features_index]))
@@ -1111,5 +1118,5 @@ class HierarchicalClassifier(object):
         #     self.prediction_all[i, node.level] = p
         #     self.probability_all[i, node.level] = b
 
-        self.write_pred(self.labels[node.test_index_all][:, node.level], pred, node.level, node.tag, True)
-        self.write_proba(self.labels[node.test_index_all][:, node.level], proba, node.level, node.tag, True)
+        self.write_pred(self.labels[node.test_index_all, node.level], pred, node.level, node.tag, True)
+        self.write_proba(self.labels[node.test_index_all, node.level], proba, node.level, node.tag, True)

@@ -5,17 +5,32 @@ from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif
 
 
-def preprocess_dataset(mode='classical'):
-    if mode == 'classical':
-        pass
-    elif mode == 'other':
-        pass
+CLASSIC = 'classic'
+CUSTOM = 'custom'
+FLATTEN = 'flatten'
 
 
-def ohe(X, nominal_features_index):
-    features_encoder = OneHotEncoder()
-    for i in nominal_features_index:
-        X[:, i] = [sp for sp in features_encoder.fit_transform(X[:, i].reshape(-1, 1))]
+def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
+    if CLASSIC in mode:
+        pass
+    elif CUSTOM in mode:
+        ohe(X, nominal_features_index)
+    elif FLATTEN in mode:
+        X = sparse_flattening(X)
+    return X
+
+
+def ohe(X, nominal_features_index, features_encoders=None):
+    if features_encoders is None:
+        features_encoders = []
+        for i in nominal_features_index:
+            features_encoder = OneHotEncoder()
+            X[:, i] = [sp for sp in features_encoder.fit_transform(X[:, i].reshape(-1, 1))]
+            features_encoders.append(features_encoder)
+        return features_encoders
+    else:
+        for i, features_encoder in zip(nominal_features_index, features_encoders):
+            X[:, i] = [sp for sp in features_encoder.transform(X[:, i].reshape(-1, 1))]
 
 
 def sparse_flattening(X):
