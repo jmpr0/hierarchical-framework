@@ -1037,7 +1037,9 @@ class HierarchicalClassifier(object):
 
     def Weka_Classifier(self, node):
         # Instantation
-        classifier = SklearnWekaWrapper(node.classifier_class, self.nominal_features_index)
+        classifier = SklearnWekaWrapper(node.classifier_class
+                                        # , self.nominal_features_index
+                                        )
         # # Features selection
         # node.features_index = self.feature_selection(node)
         return classifier
