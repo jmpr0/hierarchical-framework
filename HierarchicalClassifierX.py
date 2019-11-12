@@ -322,6 +322,7 @@ if input_is_image:
 elif early:
     hierarchical_classifier.load_early_dataset()
 else:
+    # Load dataset
     print('\nLoading input file ' + input_file + '\n')
     hierarchical_classifier.load_dataset(memoryless)
 print('\nStarting %sFold Validation\n' % k)

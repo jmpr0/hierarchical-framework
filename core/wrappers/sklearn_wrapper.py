@@ -23,6 +23,7 @@ from sklearn.base import BaseEstimator
 from sklearn.base import ClassifierMixin
 from sklearn.model_selection import GridSearchCV
 
+
 class MinMaxScalerExpPenalty(MinMaxScaler):
     def __init__(self, feature_range=(0, 1), copy=True):
         super(MinMaxScalerExpPenalty, self).__init__(

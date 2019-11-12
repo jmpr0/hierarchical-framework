@@ -23,6 +23,7 @@ from distkeras.predictors import ModelPredictor
 from distkeras.transformers import OneHotTransformer
 
 from .keras_wrapper import SklearnKerasWrapper
+import core.utils.preprocessing
 
 
 class SingletonSparkSession(object):
@@ -46,11 +47,9 @@ class SingletonSparkSession(object):
 
 class SklearnSparkWrapper(object):
 
-    def __init__(self, classifier_class, num_classes=None,
-                 numerical_features_length=None, nominal_features_lengths=None, numerical_features_index=None,
-                 nominal_features_index=None, fine_nominal_features_index=None,
-                 classifier_opts=None, epochs_number=None, level=None, fold=None, classify=None, workers_number=None,
-                 arbitrary_discr='', weight_features=True):
+    def __init__(self, classifier_class, num_classes=None, numerical_features_index=None, nominal_features_index=None,
+                 fine_nominal_features_index=None, classifier_opts=None, epochs_number=None, level=None, fold=None,
+                 classify=None, workers_number=None, arbitrary_discr='', weight_features=True):
 
         self.spark_session = SingletonSparkSession.get_session()
         self.scale = False
@@ -74,22 +73,22 @@ class SklearnSparkWrapper(object):
                                           rawPredictionCol='rawPrediction', smoothing=1.0,
                                           modelType='multinomial', thresholds=None, weightCol=None)
             self.scale = True
-        elif classifier_class == 'dmp':
-            layers = []
-            input_dim = numerical_features_length + np.sum(nominal_features_lengths)
-            depth = classifier_opts[0]
-            if input_dim is not None and num_classes is not None:
-                layers = [input_dim] + [100 for _ in range(int(depth))] + [num_classes]
-            else:
-                raise Exception('Both input_dim and num_classes must be declared.')
-            self._classifier = MultilayerPerceptronClassifier(featuresCol='scaled_features',
-                                                              labelCol='categorical_label',
-                                                              predictionCol='prediction', maxIter=100, tol=1e-06,
-                                                              seed=0, layers=layers, blockSize=32, stepSize=0.03,
-                                                              solver='l-bfgs',
-                                                              initialWeights=None, probabilityCol='probability',
-                                                              rawPredictionCol='rawPrediction')
-            self.scale = True
+        # elif classifier_class == 'dmp':
+        #     layers = []
+        #     input_dim = numerical_features_length + np.sum(nominal_features_lengths)
+        #     depth = classifier_opts[0]
+        #     if input_dim is not None and num_classes is not None:
+        #         layers = [input_dim] + [100 for _ in range(int(depth))] + [num_classes]
+        #     else:
+        #         raise Exception('Both input_dim and num_classes must be declared.')
+        #     self._classifier = MultilayerPerceptronClassifier(featuresCol='scaled_features',
+        #                                                       labelCol='categorical_label',
+        #                                                       predictionCol='prediction', maxIter=100, tol=1e-06,
+        #                                                       seed=0, layers=layers, blockSize=32, stepSize=0.03,
+        #                                                       solver='l-bfgs',
+        #                                                       initialWeights=None, probabilityCol='probability',
+        #                                                       rawPredictionCol='rawPrediction')
+        #     self.scale = True
         elif classifier_class == 'dgb':
             self._classifier = GBTClassifier(featuresCol='features', labelCol='categorical_label',
                                              predictionCol='prediction', maxDepth=5, maxBins=32,
@@ -107,18 +106,18 @@ class SklearnSparkWrapper(object):
         elif classifier_class.startswith('dk'):
             depth = classifier_opts[0]
             self.keras_wrapper = SklearnKerasWrapper(*classifier_opts, model_class=classifier_class[1:],
-                                                     epochs_number=epochs_number,
-                                                     numerical_features_length=numerical_features_length + np.sum(
-                                                         nominal_features_lengths),
-                                                     nominal_features_lengths=[], num_classes=num_classes,
+                                                     epochs_number=epochs_number, num_classes=num_classes,
                                                      nominal_features_index=[], fine_nominal_features_index=[],
                                                      numerical_features_index=numerical_features_index + fine_nominal_features_index + nominal_features_index,
                                                      level=level, fold=fold, classify=classify,
                                                      weight_features=weight_features, arbitrary_discr=arbitrary_discr)
             self._classifier = self.keras_wrapper.init_model()[2]
+            self.nominal_features_index = nominal_features_index
             self.is_keras = True
 
     def fit(self, training_set, ground_truth):
+
+        core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
 
         self.ground_truth = ground_truth
 
@@ -132,6 +131,7 @@ class SklearnSparkWrapper(object):
                                     features_col='features', label_col='categorical_label',
                                     metrics=['categorical_accuracy'])
         else:
+            training_set = core.utils.preprocessing.sparse_flattening(training_set)
             training_set = self._sklearn2spark(training_set, self.ground_truth)
         # print(self.ground_truth)
         # input()
