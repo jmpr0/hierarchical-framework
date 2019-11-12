@@ -784,6 +784,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
             hybrid = False
 
+            # TODO: following code is executed but not used
             input_shape = input_datas[0]._keras_shape[1]
             input_layer_denses = [
                 Dense(input_shape, activation=num_hidden_activation_function, name='num_penc')(input_datas[0])
