@@ -142,21 +142,22 @@ class LocalOutlierFactorAnomalyDetector(LocalOutlierFactor):
 
 
 class MixtureLocalizationOutliers(object):
-    def __init__(self, n_components=2):
-        self.GMM = GaussianMixture(n_components)
+    def __init__(self, n_components='2'):
+        self.GMM = GaussianMixture(int(n_components))
         self.LOF = LocalOutlierFactor(n_neighbors=2, novelty=True, contamination=1e-4)
 
         self.decisions = None
 
     def fit(self, X, y=None):
-        pdfs = self.GMM.fit_predict(X)
-        self.LOF.fit(pdfs)
-        lofs = self.LOF.decision_function(pdfs)
+        self.GMM.fit(X)
+        pdfs = self.GMM.score_samples(X)
+        self.LOF.fit(pdfs.reshape(-1,1))
+        lofs = self.LOF.decision_function(pdfs.reshape(-1,1))
         self.lower_lof, self.upper_lof = np.percentile(lofs, [.25, .75])
 
     def predict(self, X):
-        pdfs = self.GMM.predict(X)
-        lofs = self.LOF.decision_function(pdfs)
+        pdfs = self.GMM.score_samples(X)
+        lofs = self.LOF.decision_function(pdfs.reshape(-1,1))
         preds = []
         for pdf, lof in zip(pdfs, lofs):
             if lof <= self.lower_lof or pdf >= self.upper_lof:
