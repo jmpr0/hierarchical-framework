@@ -392,6 +392,13 @@ class HierarchicalClassifier(object):
             self.fine_nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
                                                 dataset['attributes'][i][1] in [u'SPARRAY']]
 
+            # Pre-assigment of temporary values
+            self.attributes_number = data.shape[1]
+            self.dataset_features_number = self.attributes_number - self.levels_number
+
+            self.features = data[:, :self.dataset_features_number]
+            self.labels = data[:, self.dataset_features_number:]
+
             # Preprocessing
             if self.detector_class == 'mlo':
                 mode = core.utils.preprocessing.MLO
@@ -399,49 +406,16 @@ class HierarchicalClassifier(object):
                 mode = core.utils.preprocessing.CUSTOM
                 if not self.deep:
                     mode += '-' + core.utils.preprocessing.FLATTEN
-            data = core.utils.preprocessing.preprocess_dataset(data, self.nominal_features_index, mode)
+            self.features = core.utils.preprocessing.preprocess_dataset(self.features, self.nominal_features_index, mode)
 
-            # Nominal features index should contains only string features that need to be processed with a one hot encoding.
-            # These kind of features will be treated as sparse array, if deep learning models are used.
-            # features_encoder = OneHotEncoder()
-            # for i in self.nominal_features_index:
-            #     data[:, i] = [sp for sp in features_encoder.fit_transform(data[:, i].reshape(-1, 1))]
-
-            # If model is not deep, we need to flatten sparsed features, to permit an unbiased treatment of categorical featurees w.r.t numerical one.
-            # if not self.deep:
-            #     new_data = []
-            #     for col in data.T:
-            #         if issparse(col[0]):
-            #             for col0 in np.array([c.todense() for c in col]).T:
-            #                 new_data.append(col0[0])
-            #         else:
-            #             new_data.append(col)
-            #     data = np.array(new_data).T
-
-            # After dataset preprocessing, we could save informations about dimensions
-            self.attributes_number = data.shape[1]
-            self.dataset_features_number = self.attributes_number - self.levels_number
-
-            # Moreover, we provide a count of nominal and numerical features, to correctly initialize models.
-            # self.numerical_features_length = 0
-            # self.nominal_features_lengths = []
-            # for obj in data[0, :self.dataset_features_number]:
-            #     if issparse(obj):
-            #         self.nominal_features_lengths.append(obj.shape[1])
-            #     else:
-            #         self.numerical_features_length += 1
-            # Bypassing the features selection
-            # self.features_number = self.numerical_features_length + len(self.nominal_features_lengths)
+            # After dataset preprocessing, we could update informations about dimensions
+            self.attributes_number = self.features.shape[1] + self.levels_number
+            self.dataset_features_number = self.features.shape[1]
 
             if self.anomaly and len(self.anomaly_classes) > 0:
-                self.anomaly_class = apply_anomalies(data, self.dataset_features_number + self.level_target,
-                                                     self.anomaly_classes)
+                self.anomaly_class = apply_anomalies(self.labels, self.level_target, self.anomaly_classes)
             if self.benign_class != '':
-                self.anomaly_class = apply_benign_hiddens(data, self.dataset_features_number + self.level_target,
-                                                     self.benign_class, self.hidden_classes)
-
-            self.features = data[:, :self.dataset_features_number]
-            self.labels = data[:, self.dataset_features_number:]
+                self.anomaly_class = apply_benign_hiddens(self.labels, self.level_target, self.benign_class, self.hidden_classes)
 
             if not memoryless:
                 pk.dump(

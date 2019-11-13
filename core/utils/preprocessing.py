@@ -26,7 +26,7 @@ def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
         X = sparse_flattening(X)
         # TODO: subsequents pre-processing steps should be done on the sole train set
         # PCA
-        X = pca(X, n_components=5)
+        X = pca(X, n_components=10)
         # Z-score
         X = z_score(X)
     if FLATTEN in mode:
@@ -66,9 +66,15 @@ def oe(X, nominal_features_index):
         X[:, nominal_features_index] = features_encoder.fit_transform(X[:, nominal_features_index].reshape(-1,1))
 
 
-def pca(X, n_components):
-    features_decomposer = PCA(n_components)
-    X_decomp = features_decomposer.fit_transform(X)
+def pca(X, k_best=None, n_components=None):
+    if k_best is not None:
+        features_decomposer = PCA()
+        features_decomposer.fit(X)
+        variances = features_decomposer.explained_variance_
+        X_decomp = X[:, sorted(list(reversed(np.argsort(variances)))[:k_best])]
+    elif n_components is not None:
+        features_decomposer = PCA(n_components)
+        X_decomp = features_decomposer.fit_transform(X)
     return X_decomp
 
 
@@ -88,7 +94,7 @@ def get_num_nom_lengths(X):
 
 
 # TODO: now it works only on one level dataset for AD, where when multiclass and anomaly is specified, anomaly goes to '1' and others to '0'
-def apply_anomalies(X, target_index, anomaly_classes):
+def apply_anomalies(y, target_index, anomaly_classes):
     '''
     :param X: data
     :param anomaly_classes:
@@ -96,14 +102,14 @@ def apply_anomalies(X, target_index, anomaly_classes):
     :return:
     '''
     for anomaly_class in anomaly_classes:
-        X[np.where(X[:, target_index] == anomaly_class), target_index] = '1'
-    X[np.where(X[:, target_index] != '1'), target_index] = '0'
+        y[np.where(y[:, target_index] == anomaly_class), target_index] = '1'
+    y[np.where(y[:, target_index] != '1'), target_index] = '0'
     anomaly_class = '1'
     return anomaly_class
 
 
 # TODO: manage hidden classes in presence of benign declared and array of hidden classes
-def apply_benign_hiddens(X, target_index, benign_class, hidden_classes):
+def apply_benign_hiddens(y, target_index, benign_class, hidden_classes):
     '''
         :param X: data
         :param benign_class:
@@ -112,10 +118,10 @@ def apply_benign_hiddens(X, target_index, benign_class, hidden_classes):
         :return:
         '''
     if len(hidden_classes) > 0:
-        X[np.where((X[:, target_index] != benign_class) & (X[:, target_index] != hidden_classes)), target_index] = '1'
+        y[np.where((y[:, target_index] != benign_class) & (y[:, target_index] != hidden_classes)), target_index] = '1'
     else:
-        X[np.where(X[:, target_index] != benign_class), target_index] = '1'
-    X[np.where(X[:, target_index] == benign_class), target_index] = '0'
+        y[np.where(X[:, target_index] != benign_class), target_index] = '1'
+    y[np.where(X[:, target_index] == benign_class), target_index] = '0'
     anomaly_class = '1'
     return anomaly_class
 
