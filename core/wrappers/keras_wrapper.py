@@ -27,6 +27,9 @@ from keras.activations import relu
 from keras.activations import elu
 from keras.activations import sigmoid
 from keras.activations import tanh
+from keras.losses import mean_squared_error
+from keras.losses import categorical_crossentropy
+from keras.losses import binary_crossentropy
 
 # For reproducibility
 from tensorflow import set_random_seed, logging
