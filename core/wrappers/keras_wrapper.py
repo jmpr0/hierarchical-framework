@@ -23,6 +23,10 @@ from keras import backend as K
 from keras.optimizers import Adadelta
 from keras.layers import concatenate
 from keras.utils.vis_utils import plot_model
+from keras.activations import relu
+from keras.activations import elu
+from keras.activations import sigmoid
+from keras.activations import tanh
 
 # For reproducibility
 from tensorflow import set_random_seed, logging
