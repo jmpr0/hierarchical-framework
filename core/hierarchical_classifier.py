@@ -393,9 +393,12 @@ class HierarchicalClassifier(object):
                                                 dataset['attributes'][i][1] in [u'SPARRAY']]
 
             # Preprocessing
-            mode = core.utils.preprocessing.CUSTOM
-            if not self.deep:
-                mode += '-' + core.utils.preprocessing.FLATTEN
+            if self.detector_class == 'mlo':
+                mode = core.utils.preprocessing.MLO
+            else:
+                mode = core.utils.preprocessing.CUSTOM
+                if not self.deep:
+                    mode += '-' + core.utils.preprocessing.FLATTEN
             data = core.utils.preprocessing.preprocess_dataset(data, self.nominal_features_index, mode)
 
             # Nominal features index should contains only string features that need to be processed with a one hot encoding.

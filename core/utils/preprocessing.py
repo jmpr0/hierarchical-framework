@@ -11,6 +11,7 @@ from sklearn.preprocessing import scale
 CLASSIC = 'classic'
 CUSTOM = 'custom'
 FLATTEN = 'flatten'
+MLO = 'mlo'
 
 
 def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
@@ -18,6 +19,16 @@ def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
         pass
     elif CUSTOM in mode:
         ohe(X, nominal_features_index)
+    elif MLO in mode:
+        # OrdinalEncoding
+        oe(X, nominal_features_index)
+        # Flattening eventual Packet-based Categorical feature (Hystograms)
+        X = sparse_flattening(X)
+        # TODO: subsequents pre-processing steps should be done on the sole train set
+        # PCA
+        X = pca(X, n_components=5)
+        # Z-score
+        X = z_score(X)
     if FLATTEN in mode:
         X = sparse_flattening(X)
     return X
