@@ -28,5 +28,6 @@ supported_detectors = {
     'slo2': 'Sklearn_LocalOutlierFactor',
     'ksae': 'Keras_StackedAutoencoder',
     'kdae': 'Keras_DeepAutoencoder',
-    'kc2dae': 'Keras_Convolutional2DAutoencoder'
+    'kc2dae': 'Keras_Convolutional2DAutoencoder',
+    'mlo' : 'MixtureLocalizationOutlier'
 }

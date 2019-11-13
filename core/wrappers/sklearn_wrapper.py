@@ -1,10 +1,13 @@
 import numpy as np
-
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
+from sklearn.cluster import KMeans
 from sklearn.svm import OneClassSVM
 from sklearn.ensemble import IsolationForest
 from sklearn.neighbors import LocalOutlierFactor
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.mixture import GaussianMixture
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.tree import DecisionTreeClassifier
 from sklearn.covariance import EllipticEnvelope
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif
@@ -12,7 +15,6 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OrdinalEncoder
 from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import QuantileTransformer
 from sklearn.neighbors import KernelDensity
 from sklearn.decomposition import FactorAnalysis
@@ -137,3 +139,34 @@ class LocalOutlierFactorAnomalyDetector(LocalOutlierFactor):
             return 0
         decisions = MinMaxScaler().fit_transform(decisions.reshape(-1, 1))
         return np.mean(decisions)
+
+
+class MixtureLocalizationOutliers(object):
+    def __init__(self, n_components=2):
+        self.GMM = GaussianMixture(n_components)
+        self.LOF = LocalOutlierFactor(n_neighbors=2, novelty=True, contamination=1e-4)
+
+        self.decisions = None
+
+    def fit(self, X, y=None):
+        pdfs = self.GMM.fit_predict(X)
+        self.LOF.fit(pdfs)
+        lofs = self.LOF.decision_function(pdfs)
+        self.lower_lof, self.upper_lof = np.percentile(lofs, [.25, .75])
+
+    def predict(self, X):
+        pdfs = self.GMM.predict(X)
+        lofs = self.LOF.decision_function(pdfs)
+        preds = []
+        for pdf, lof in zip(pdfs, lofs):
+            if lof <= self.lower_lof or pdf >= self.upper_lof:
+                preds.append(-1)
+            else:
+                preds.append(1)
+        self.decisions = lofs
+        return preds
+
+    def decision_function(self, X):
+        if self.decisions is None:
+            self.predict(X)
+        return self.decisions

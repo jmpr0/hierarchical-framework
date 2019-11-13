@@ -3,6 +3,7 @@ import time
 from scipy.sparse import issparse
 
 from ..wrappers.sklearn_wrapper import OneClassSVMAnomalyDetector
+from ..wrappers.sklearn_wrapper import MixtureLocalizationOutliers
 from ..wrappers.sklearn_wrapper import IsolationForestAnomalyDetector
 from ..wrappers.sklearn_wrapper import LocalOutlierFactorAnomalyDetector
 from ..wrappers.keras_wrapper import SklearnKerasWrapper
@@ -42,19 +43,6 @@ class AnomalyDetector(object):
                         'gamma': np.linspace(.1, 1, 5),
                         'nu': np.linspace(.1, 1, 5)
                     }
-                # [
-                # ,
-                # {
-                #     'kernel': ['poly'],
-                #     'degree': [3,5,7,9],
-                #     'gamma': np.linspace(.1,1,10),
-                #     'nu': np.linspace(.1,1,10)
-                # },
-                # {
-                #     'kernel': ['linear'],
-                #     'nu': np.linspace(.1,1,10)
-                # }
-                # ]
             elif detector_class == 'sif':
                 if not self.optimize:
                     self.anomaly_detector = IsolationForestAnomalyDetector(n_estimators=100, contamination=0.)
@@ -83,7 +71,6 @@ class AnomalyDetector(object):
                             'n_neighbors': [int(i) for i in np.linspace(2, 100, 5)],
                             'algorithm': ['kd_tree'],
                             'leaf_size': [int(i) for i in np.linspace(3, 150, 5)],
-                            # 'metric': ['chebyshev', 'cityblock', 'euclidean', 'infinity', 'l1', 'l2', 'manhattan', 'minkowski', 'p'],
                             'contamination': [1e-4],
                             'novelty': [True]
                         },
@@ -91,24 +78,10 @@ class AnomalyDetector(object):
                             'n_neighbors': [int(i) for i in np.linspace(2, 100, 5)],
                             'algorithm': ['ball_tree'],
                             'leaf_size': [int(i) for i in np.linspace(3, 150, 5)],
-                            # 'metric': ['braycurtis', 'canberra', 'chebyshev', 'cityblock', 'dice', 'euclidean', 'hamming',\
-                            # 'infinity', 'jaccard', 'kulsinski', 'l1', 'l2', 'manhattan', 'matching', 'minkowski', 'p',\
-                            # 'rogerstanimoto', 'russellrao', 'sokalmichener', 'sokalsneath'],
                             'contamination': [1e-4],
                             'novelty': [True]
                         }
-                        # ,
-                        # {
-                        #     'n_neighbors': [ int(i) for i in np.linspace(2,100,10) ],
-                        #     'algorithm': ['brute'],
-                        #     'metric': ['braycurtis', 'canberra', 'chebyshev', 'cityblock', 'correlation', 'cosine', 'cosine', 'dice',\
-                        #     'euclidean', 'hamming', 'jaccard', 'kulsinski', 'l1', 'l2', 'manhattan', 'matching', 'minkowski',\
-                        #     'rogerstanimoto', 'russellrao', 'sokalmichener', 'sokalsneath', 'sqeuclidean', 'yule'],
-                        #     'contamination': [1e-4],
-                        #     'novelty': [True]
-                        # }
                     ]
-                # self.grid_search_anomaly_detector = GridSearchCV(anomaly_detector, param_grid)
             elif self.dl:
                 if not self.optimize:
                     self.anomaly_detector = SklearnKerasWrapper(*detector_opts, model_class=detector_class,
@@ -122,20 +95,17 @@ class AnomalyDetector(object):
                         'sharing_ray': [str(i) for i in range(-1, d + 1)],
                         'grafting_depth': [str(i) for i in range(0, d + 2)],
                         'depth': [str(d)],
-                        # 'compression_ratio': ['.1','.15','.2','.25'],
                         'compression_ratio': ['.1'],
-                        # 'mode': ['n','v','s','p','sv','sp','vp','svp'],
                         'mode': ['n'],
-                        # 'hidden_activation_function': ['elu','tanh','sigmoid'],
                         'hidden_activation_function_name': ['elu'],
                         'model_class': [detector_class],
                         'epochs_number': [epochs_number],
                         'num_classes': [2],
                         'fold': [fold],
                         'level': [level]
-                        # } for d in range(1,6) ]
                     } for d in range(3, 4)]
-                # self.grid_search_anomaly_detector = GridSearchCV(anomaly_detector, param_grid)
+            elif detector_class == 'mlo':
+                self.anomaly_detector = MixtureLocalizationOutliers(*detector_opts)
             if not self.optimize:
                 self.anomaly_detectors.append(self.anomaly_detector)
         self.detector_class = detector_class
@@ -143,12 +113,7 @@ class AnomalyDetector(object):
         if self.optimize:
             self.grid_search_anomaly_detector = GridSearchCV(anomaly_detector, param_grid, verbose=1,
                                                              n_jobs=workers_number)
-            # self.grid_search_anomaly_detector.evaluate_candidates(ParameterGrid(param_grid))
-            # input()
             self.file_out = 'data_%s/material/optimization_results_fold_%s.csv' % (detector_class, fold)
-
-        # print(self.grid_search_anomaly_detector.get_params())
-        # input()
 
     def fit(self, training_set, ground_truth):
 
@@ -271,10 +236,7 @@ class AnomalyDetector(object):
         return proba
 
     def set_oracle(self, oracle):
-
         self.oracle = oracle
-
-        pass
 
     def get_distances(self, X, num_centers=None, nom_centers=None):
         '''

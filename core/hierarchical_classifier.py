@@ -946,7 +946,7 @@ class HierarchicalClassifier(object):
         self.write_proba(self.labels[node.test_index_all, node.level], [proba_base] * len(node.test_index_all),
                          node.level, node.tag, True)
 
-    # TODO: does not apply preprocessing to dataset
+    # TODO: does not apply preprocessing to dataset (if applied per-node)
     def Sklearn_RandomForest(self, node):
         # Instantation
         classifier = OutputCodeClassifier(RandomForestClassifier(n_estimators=100, n_jobs=-1),
@@ -955,7 +955,7 @@ class HierarchicalClassifier(object):
         # node.features_index = self.features_selection(node)
         return classifier
 
-    # TODO: does not apply preprocessing to dataset
+    # TODO: does not apply preprocessing to dataset (if applied per-node)
     def Sklearn_CART(self, node):
         # Instantation
         classifier = DecisionTreeClassifier()

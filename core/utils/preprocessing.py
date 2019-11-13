@@ -1,8 +1,11 @@
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import OrdinalEncoder
+from sklearn.decomposition import PCA
 from scipy.sparse import issparse
 import numpy as np
 from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif
+from sklearn.preprocessing import scale
 
 
 CLASSIC = 'classic'
@@ -42,6 +45,24 @@ def sparse_flattening(X):
         else:
             new_data.append(col)
     return np.array(new_data).T
+
+
+def oe(X, nominal_features_index):
+    features_encoder = OrdinalEncoder()
+    if len(nominal_features_index) > 1:
+        X[:, nominal_features_index] = features_encoder.fit_transform(X[:, nominal_features_index])
+    else:
+        X[:, nominal_features_index] = features_encoder.fit_transform(X[:, nominal_features_index].reshape(-1,1))
+
+
+def pca(X, n_components):
+    features_decomposer = PCA(n_components)
+    X_decomp = features_decomposer.fit_transform(X)
+    return X_decomp
+
+
+def z_score(X):
+    return scale(X)
 
 
 def get_num_nom_lengths(X):
