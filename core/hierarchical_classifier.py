@@ -687,8 +687,8 @@ class HierarchicalClassifier(object):
             print('')
 
             for node in nodes:
-                pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_level_%s%s_tag_%s_model.dat' %
-                        (self.material_models_folder, self.arbitrary_discr, self.type_discr, node.level, self.params_discr, node.tag),'wb'))
+                pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.dat' %
+                        (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
 
         # MEAN WEIGHT MODEL
         # if self.anomaly and self.deep:
