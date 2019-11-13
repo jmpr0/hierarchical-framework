@@ -6,17 +6,10 @@ from weka.core.dataset import Attribute
 from weka.core.converters import ndarray_to_instances
 import weka.core.jvm as jvm
 
-# import core.utils.preprocessing
-
 
 class SklearnWekaWrapper(object):
 
-    def __init__(self, classifier_name
-                 # , nominal_features_index
-                 ):
-
-        # self.nominal_features_index = nominal_features_index
-
+    def __init__(self, classifier_name):
         # Defaults
         class_name = 'weka.classifiers.trees.RandomForest'
         options = None
@@ -44,36 +37,35 @@ class SklearnWekaWrapper(object):
         else:
             self._classifier = Classifier(classname=class_name)
 
+        self.model_ = None
+
     def fit(self, training_set, ground_truth):
-
-        # self.nominal_encoder = core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
-        # training_set = core.utils.preprocessing.sparse_flattening(training_set)
-
         self.ground_truth = ground_truth
 
         training_set = self._sklearn2weka(training_set, self.ground_truth)
         training_set.class_is_last()
 
-        t = time.time()
+        t = 0
+        t = time.time() - t
         self._classifier.build_classifier(training_set)
         t = time.time() - t
 
-        self.t_ = t
+        self.model_ = self._classifier
+        self.tr_ = t
 
         return self
 
     def predict(self, testing_set):
-
-        # core.utils.preprocessing.ohe(testing_set, self.nominal_features_index, self.nominal_encoder)
-        # testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
-
         testing_set = self._sklearn2weka(testing_set, self.oracle)
         testing_set.class_is_last()
 
         preds = []
         dists = []
+        t = 0
         for index, inst in enumerate(testing_set):
+            t = time.time() - t
             pred = self._classifier.classify_instance(inst)
+            t = time.time() - t
             dist = self._classifier.distribution_for_instance(inst)
             preds.append(pred)
             dists.append(dist)
@@ -81,20 +73,19 @@ class SklearnWekaWrapper(object):
         preds = np.vectorize(self._dict.get)(preds)
         self.proba = dists
 
+        self.te_ = t
+
         return np.array(preds)
 
     def predict_proba(self, testing_set):
-
         if self.proba is None:
             self.predict(testing_set)
         return self.proba
 
     def set_oracle(self, oracle):
-
         self.oracle = oracle
 
     def _sklearn2weka(self, features, labels=None):
-
         # All weka datasets have to be a zero-based coding for the column of labels
         # We can use non-aligned labels for training and testing because the labels
         # in testing phase are only used to obtain performance, but not for preds.

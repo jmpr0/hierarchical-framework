@@ -115,6 +115,8 @@ class AnomalyDetector(object):
                                                              n_jobs=workers_number)
             self.file_out = 'data_%s/material/optimization_results_fold_%s.csv' % (detector_class, fold)
 
+        self.model_ = None
+
     def fit(self, training_set, ground_truth):
 
         if not self.unsupervised:
@@ -130,19 +132,13 @@ class AnomalyDetector(object):
             local_training_set, self.train_scaler = self.scale_n_flatten(training_set[normal_index], return_scaler=True)
             clustering_training_set = local_training_set
 
-        t = time.time()
+        t = 0
         if self.n_clusters < 2:
             # if self.dl:
             if self.optimize:
-                for row in local_training_set:
-                    for elem in row:
-                        try:
-                            float(elem)
-                        except:
-                            print(row)
-                            print(elem)
-                            input()
+                t = time.time() - t
                 self.grid_search_anomaly_detector.fit(local_training_set, ground_truth[normal_index])
+                t = time.time() - t
                 self.anomaly_detector = self.grid_search_anomaly_detector.best_estimator_
                 import pandas as pd
                 df = pd.DataFrame(list(self.grid_search_anomaly_detector.cv_results_['params']))
@@ -154,12 +150,17 @@ class AnomalyDetector(object):
                 # The first line contains the best model and its parameters
                 df_final.to_csv(self.file_out)
             else:
+                t = time.time() - t
                 self.anomaly_detector.fit(local_training_set, ground_truth[normal_index])
-        # else:
-        #     self.grid_search_anomaly_detector.fit(local_training_set, ground_truth[normal_index])
-        #     self.anomaly_detector = self.grid_search_anomaly_detector.best_estimator_
+                t = time.time() - t
+            if hasattr(self.anomaly_detector, 'model_'):
+                self.model_ = self.anomaly_detector.model_
+            else:
+                self.model_ = self.anomaly_detector
         else:
             from sklearn.cluster import KMeans
+            self.model_ = list()
+            t = time.time() - t
             self.clustering = KMeans(n_clusters=self.n_clusters)
             # We compose training set to feed clustering, in particular categorical (nominal) features are converted from
             # array of 0 and 1 to string of 0 and 1, then numerical are treated as float and then minmax scaled
@@ -170,20 +171,17 @@ class AnomalyDetector(object):
                 print('\nTraining Model of Cluster n.%s\n' % (i + 1))
                 red_normal_index = [j for j, v in enumerate(cluster_index) if v == i]
                 self.anomaly_detectors[i].fit(local_training_set[red_normal_index], ground_truth[normal_index])
-
-        t = time.time() - t
-
-        self.t_ = t
+            t = time.time() - t
+            for anomaly_detector in self.anomaly_detectors:
+                if hasattr(anomaly_detector, 'model_'):
+                    self.model_.append(anomaly_detector.model_)
+                else:
+                    self.model_.append(anomaly_detector)
+        self.tr_ = t
 
         return self
 
     def predict(self, testing_set):
-
-        # # Only for debugging
-        # self.anomaly_detector.set_oracle(self.oracle)
-
-        # self.clustering.transform(X) to get distances for each sample to each centers
-        # self.clustering.cluster_centers_ to get centers
 
         if self.dl:
             local_testing_set = testing_set
@@ -192,10 +190,14 @@ class AnomalyDetector(object):
             local_testing_set = self.scale_n_flatten(testing_set, self.train_scaler)
             clustering_testing_set = local_testing_set
 
+        t = 0
         if self.n_clusters < 2:
+            t = time.time() - t
             pred = self.anomaly_detector.predict(local_testing_set)
             pred = np.asarray([self.anomaly_class if p < 0 else self.normal_class for p in pred])
+            t = time.time() - t
         else:
+            t = time.time() - t
             cluster_index = self.clustering.predict(clustering_testing_set)
             pred = np.ndarray(shape=[len(cluster_index), ])
             for i, _anomaly_detector in enumerate(self.anomaly_detectors):
@@ -203,6 +205,9 @@ class AnomalyDetector(object):
                 pred[red_index] = _anomaly_detector.predict(local_testing_set[red_index])
                 pred[red_index] = np.asarray(
                     [self.anomaly_class if p < 0 else self.normal_class for p in pred[red_index]])
+            t = time.time() - t
+
+        self.te_ = t
 
         return pred
 

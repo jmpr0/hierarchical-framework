@@ -6,25 +6,6 @@ from sklearn.neighbors import LocalOutlierFactor
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.mixture import GaussianMixture
 
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.covariance import EllipticEnvelope
-from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import mutual_info_classif
-from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import OrdinalEncoder
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.preprocessing import QuantileTransformer
-from sklearn.neighbors import KernelDensity
-from sklearn.decomposition import FactorAnalysis
-from sklearn.multiclass import OutputCodeClassifier
-
-from sklearn.preprocessing import LabelEncoder
-from sklearn.base import BaseEstimator
-from sklearn.base import ClassifierMixin
-from sklearn.model_selection import GridSearchCV
-
 
 class MinMaxScalerExpPenalty(MinMaxScaler):
     def __init__(self, feature_range=(0, 1), copy=True):

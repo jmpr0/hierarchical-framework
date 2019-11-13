@@ -9,7 +9,6 @@ from pyspark.sql.session import SparkSession
 from pyspark.sql.functions import udf
 from pyspark.ml.classification import RandomForestClassifier
 from pyspark.ml.classification import NaiveBayes
-from pyspark.ml.classification import MultilayerPerceptronClassifier
 from pyspark.ml.classification import GBTClassifier
 from pyspark.ml.classification import DecisionTreeClassifier
 from pyspark.ml.linalg import Vectors
@@ -23,7 +22,6 @@ from distkeras.predictors import ModelPredictor
 from distkeras.transformers import OneHotTransformer
 
 from .keras_wrapper import SklearnKerasWrapper
-# import core.utils.preprocessing
 
 
 class SingletonSparkSession(object):
@@ -73,22 +71,6 @@ class SklearnSparkWrapper(object):
                                           rawPredictionCol='rawPrediction', smoothing=1.0,
                                           modelType='multinomial', thresholds=None, weightCol=None)
             self.scale = True
-        # elif classifier_class == 'dmp':
-        #     layers = []
-        #     input_dim = numerical_features_length + np.sum(nominal_features_lengths)
-        #     depth = classifier_opts[0]
-        #     if input_dim is not None and num_classes is not None:
-        #         layers = [input_dim] + [100 for _ in range(int(depth))] + [num_classes]
-        #     else:
-        #         raise Exception('Both input_dim and num_classes must be declared.')
-        #     self._classifier = MultilayerPerceptronClassifier(featuresCol='scaled_features',
-        #                                                       labelCol='categorical_label',
-        #                                                       predictionCol='prediction', maxIter=100, tol=1e-06,
-        #                                                       seed=0, layers=layers, blockSize=32, stepSize=0.03,
-        #                                                       solver='l-bfgs',
-        #                                                       initialWeights=None, probabilityCol='probability',
-        #                                                       rawPredictionCol='rawPrediction')
-        #     self.scale = True
         elif classifier_class == 'dgb':
             self._classifier = GBTClassifier(featuresCol='features', labelCol='categorical_label',
                                              predictionCol='prediction', maxDepth=5, maxBins=32,
@@ -115,10 +97,9 @@ class SklearnSparkWrapper(object):
             self.nominal_features_index = nominal_features_index
             self.is_keras = True
 
+        self.model_ = None
+
     def fit(self, training_set, ground_truth):
-
-        # self.nominal_encoder = core.utils.preprocessing.ohe(training_set, self.nominal_features_index)
-
         self.ground_truth = ground_truth
 
         if self.is_keras:
@@ -131,10 +112,7 @@ class SklearnSparkWrapper(object):
                                     features_col='features', label_col='categorical_label',
                                     metrics=['categorical_accuracy'])
         else:
-            # training_set = core.utils.preprocessing.sparse_flattening(training_set)
             training_set = self._sklearn2spark(training_set, self.ground_truth)
-        # print(self.ground_truth)
-        # input()
         if self.scale:
             scaler = MinMaxScaler(inputCol='features', outputCol='scaled_features')
             self.scaler_model_ = scaler.fit(training_set)
@@ -143,29 +121,23 @@ class SklearnSparkWrapper(object):
             scaled_training_set = training_set
 
         # Maybe keras model train is returned
+        t = 0
+        t = time.time() - t
         if not self.is_keras:
-            t = time.time()
             self.model = self._classifier.fit(scaled_training_set)
-            t = time.time() - t
         else:
-            t = time.time()
             self.model = self._classifier.train(scaled_training_set)
-            t = time.time() - t
             self.model = ModelPredictor(keras_model=self.model, features_col='features')
-
-        self.t_ = t
+        t = time.time() - t
+        self.model_ = self.model
+        self.tr_ = t
 
         return self
 
     def predict(self, testing_set):
-
-        # core.utils.preprocessing.ohe(testing_set, self.nominal_features_index, self.nominal_encoder)
-
         if self.is_keras:
             nom_testing_set, num_testing_set = self.keras_wrapper.split_nom_num_features(testing_set)
             testing_set = [num_testing_set] + nom_testing_set
-        # else:
-        #     testing_set = core.utils.preprocessing.sparse_flattening(testing_set)
 
         testing_set = self._sklearn2spark(testing_set)
         if self.scale:
@@ -173,27 +145,29 @@ class SklearnSparkWrapper(object):
         else:
             scaled_testing_set = testing_set
 
+        t = 0
+        t = time.time() - t
         if not self.is_keras:
             self.results = self.model.transform(scaled_testing_set)
             preds = np.array([int(float(row.prediction)) for row in self.results.collect()])
+            t = time.time() - t
             self.probas_ = np.array([row.probability.toArray() for row in self.results.collect()])
         else:
             preds = self.model.predict(testing_set)
+            t = time.time() - t
+        self.te_ = t
 
         return preds
 
     def predict_proba(self, testing_set):
-
         if self.probas_ is None:
             self.predict(testing_set)
         return np.array(self.probas_)
 
     def set_oracle(self, oracle):
-
         self.oracle = oracle
 
     def _sklearn2spark(self, features, labels=None, multi_input=False):
-
         features_names = []
         if multi_input:
             dataset = pandas.DataFrame()
@@ -234,8 +208,5 @@ class SklearnSparkWrapper(object):
                 list_to_vector_udf(spark_dataset_with_list['features']).alias('features'),
                 spark_dataset_with_list['categorical_label']
             )
-
-        # if spark_dataset.rdd.getNumPartitions() != self.workers_number:
-        #     spark_dataset = spark_dataset.coalesce(numPartitions=self.workers_number)
 
         return spark_dataset

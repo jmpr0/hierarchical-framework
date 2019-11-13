@@ -12,52 +12,23 @@ from sklearn.preprocessing import QuantileTransformer
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import StratifiedKFold
 
-# import core.utils.preprocessing
+from keras.models import Model
+from keras.layers import Dense
+from keras.layers import Input
+from keras.layers import Conv2D
+from keras.layers import Dropout
+from keras.callbacks import EarlyStopping
+from keras.callbacks import CSVLogger
+from keras import backend as K
+from keras.optimizers import Adadelta
+from keras.layers import concatenate
+from keras.utils.vis_utils import plot_model
 
 # For reproducibility
 from tensorflow import set_random_seed, logging
 
 set_random_seed(0)
 logging.set_verbosity(logging.ERROR)
-
-import keras
-import cython
-from keras import optimizers
-from keras.models import Sequential
-from keras.models import Model
-from keras.layers import Dense
-from keras.layers import Input
-from keras.layers import Conv1D
-from keras.layers import Conv2D
-from keras.layers import MaxPooling2D
-from keras.layers import Flatten
-from keras.layers import Dropout
-from keras.layers import Reshape
-from keras.layers import BatchNormalization
-from keras.layers import LSTM
-from keras.layers import AveragePooling1D
-from keras.layers import MaxPooling1D
-from keras.layers import UpSampling1D
-from keras.layers import Activation
-from keras.activations import relu
-from keras.activations import elu
-from keras.activations import sigmoid
-from keras.activations import hard_sigmoid
-from keras.activations import tanh
-from keras.activations import softmax
-from keras.callbacks import EarlyStopping
-from keras.callbacks import CSVLogger
-from keras.callbacks import ModelCheckpoint
-from keras.losses import mean_squared_error
-from keras.losses import categorical_crossentropy
-from keras import backend as K
-from keras.optimizers import SGD
-from keras.optimizers import Adadelta
-from keras.layers import concatenate
-from keras.utils.vis_utils import plot_model
-from keras import regularizers
-from keras.layers import Lambda
-from keras.models import clone_model
 
 
 class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
@@ -66,10 +37,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                  compression_ratio='.1', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
                  level=0, classify=False, weight_features=False, arbitrary_discr=''):
-
-        # print(depth, hidden_activation_function, mode, sharing_ray, grafting_depth, compression_ratio,
-        # model_class, epochs_number, num_classes, fold, level, classify)
-        # input()
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
              [depth, hidden_activation_function_name, mode, sharing_ray, grafting_depth, compression_ratio]]
@@ -160,14 +127,12 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     self.nominal_output_activation_functions.append('sigmoid')
                     self.nominal_loss_functions.append('mean_squared_error')
 
-    def fit(self, X, y=None):
+        self.model_ = None
 
+    def fit(self, X, y=None):
         if not -1 <= self.sharing_ray <= self.depth or not 0 <= self.grafting_depth <= self.depth + 1:
             raise Exception('Invalid value for Shared Ray or for Grafting Depth.\n\
                 Permitted values are: S_r in [-1, Depth] and G_d in [0, Depth+1].')
-
-        # self.nominal_encoder = core.utils.preprocessing.ohe(X, self.nominal_features_index)
-        # self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
 
         nom_X, num_X = self.split_nom_num_features(X)
 
@@ -245,8 +210,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                                 ),
                                 callbacks=[
                                     EarlyStopping(monitor='val_loss', patience=self.patience, min_delta=self.min_delta),
-                                    CSVLogger(self.log_file),
-                                    # ModelCheckpoint(filepath=self.checkpoint_file, verbose=1, save_best_only=True)
+                                    CSVLogger(self.log_file)
                                 ]
                             )
                         if self.classify:
@@ -270,8 +234,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                                     callbacks=[
                                         EarlyStopping(monitor='val_loss', patience=self.patience,
                                                       min_delta=self.min_delta),
-                                        CSVLogger(self.log_file),
-                                        # ModelCheckpoint(filepath=self.checkpoint_file, verbose=1, save_best_only=True)
+                                        CSVLogger(self.log_file)
                                     ]
                                 )
                     else:
@@ -301,25 +264,11 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                                 ),
                                 callbacks=[
                                     EarlyStopping(monitor='val_loss', patience=self.patience, min_delta=self.min_delta),
-                                    CSVLogger(self.log_file),
-                                    # ModelCheckpoint(filepath=self.checkpoint_file, verbose=1, save_best_only=True)
+                                    CSVLogger(self.log_file)
                                 ]
                             )
-                    # num_losses, nom_losses, clf_losses = self.get_losses(train_history.history,discr='val')
-                    # # This order (i.e. num+nom) must be respected to compute weighthed average
-                    # if self.classify or (len(num_losses) == 0 and len(nom_losses) == 0):
-                    #     losses = clf_losses
-                    #     normal_losses_per_fold[-1].append(losses)
-                    # else:
-                    #     losses = num_losses + nom_losses
-                    #     # print(losses)
-                    #     # print(num_weight + nom_weights)
-                    #     normal_losses_per_fold[-1].append(np.mean(losses, weights=[ self.numerical_weight ]+self.nominal_weights))
                     normal_losses_per_fold[-1].append(self.get_loss(train_history.history, 'val_loss'))
                     times_per_fold[-1][-1] = time.time() - times_per_fold[-1][-1]
-                # train_history = losses = nom_losses = num_losses = clf_losses = None
-                # del train_history, losses, nom_losses, num_losses, clf_losses
-                # gc.collect()
                 normal_losses_per_fold[-1] = np.asarray(normal_losses_per_fold[-1])
                 times_per_fold[-1] = np.asarray(times_per_fold[-1])
             mean_normal_losses = np.mean(normal_losses_per_fold, axis=1)
@@ -366,8 +315,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                         verbose=2,
                         callbacks=[
                             EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
-                            CSVLogger(self.log_file),
-                            # ModelCheckpoint(filepath=self.checkpoint_file, verbose=1, save_best_only=True)
+                            CSVLogger(self.log_file)
                         ]
                     )
                 if self.classify:
@@ -384,8 +332,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                         verbose=2,
                         callbacks=[
                             EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
-                            CSVLogger(self.log_file),
-                            # ModelCheckpoint(filepath=self.checkpoint_file, verbose=1, save_best_only=True)
+                            CSVLogger(self.log_file)
                         ]
                     )
         # TODO: denoising training definition
@@ -407,30 +354,22 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     verbose=2,
                     callbacks=[
                         EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
-                        CSVLogger(self.log_file),
-                        # ModelCheckpoint(filepath=self.checkpoint_file, verbose=1, save_best_only=True)
+                        CSVLogger(self.log_file)
                     ]
                 )
-        # num_losses, nom_losses, clf_losses = self.get_losses(train_history.history)
-        # # This order (i.e. num+nom) must be respected to compute weighthed average
-        # if self.classify or (len(num_losses) == 0 and len(nom_losses) == 0):
-        #     losses = clf_losses
-        #     # self.normal_loss_ = np.mean(losses)
-        # else:
-        #     losses = num_losses + nom_losses
-        # self.normal_loss_ = np.average(losses, weights = num_weight + nom_weights)
-        # self.normal_loss_ = np.mean(losses)
         self.normal_loss_ = self.get_loss(train_history.history, 'loss')
         t = time.time() - t
         if self.reconstruction_model_ is not None:
+            self.model_ = self.reconstruction_model_
             with open(self.summary_file + '_best_reconstruction_model_' + best_model_name + '.dat', 'w') as f:
                 self.reconstruction_model_.summary(print_fn=lambda x: f.write(x + '\n'))
         if self.classify:
+            self.model_ = self.classification_model_
             with open(self.summary_file + '_best_classification_model_' + best_model_name + '.dat', 'w') as f:
                 self.classification_model_.summary(print_fn=lambda x: f.write(x + '\n'))
         print('loss', self.normal_loss_)
-        print('time', t)
-        self.t_ = t
+        print('Training time', t)
+        self.tr_ = t
         return self
 
     def get_losses(self, history, discr=''):
@@ -911,13 +850,9 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             plot_model(reconstruction_model,
                        to_file=self.plot_file + '_reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.png',
                        show_shapes=True, show_layer_names=True)
-            # plot_model(reconstruction_model,
-            #            to_file='./reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.png', show_shapes=True,
-            #            show_layer_names=True)
             with open(self.summary_file + '_reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.dat',
                       'w') as f:
                 reconstruction_model.summary(print_fn=lambda x: f.write(x + '\n'))
-            # reconstruction_model.add_loss(LSG_DAE_loss(input_datas, decodeds, self.depth, sharing_ray, grafting_depth, [self.numerical_loss_function] + self.nominal_loss_functions))
             reconstruction_model.compile(optimizer=Adadelta(lr=1.),
                                          loss=[self.numerical_loss_function] + self.nominal_loss_functions,
                                          loss_weights=[self.numerical_weight] + self.nominal_weights)
@@ -982,13 +917,10 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         return reconstruction_model, compression_model, classification_model, model_name
 
     def predict(self, X, y=None):
-
-        # core.utils.preprocessing.ohe(X, self.nominal_features_index, self.nominal_encoder)
-        # self.numerical_features_length, self.nominal_features_lengths = core.utils.preprocessing.get_num_nom_lengths(X)
-
-        # X, nominal_features_index, numerical_features_index = self.expand_onehot_features(X)
         nom_X, num_X = self.split_nom_num_features(X)
         scaled_num_X = self.scaler.transform(num_X)
+        t = 0
+        t = time.time() - t
         if self.classify:
             pred = self.classification_model_.predict([scaled_num_X] + nom_X)
             self.proba = copy(pred)
@@ -1008,12 +940,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             for nts, rnts, nominal_loss_function in zip(nom_X, reconstr_X[1:], self.nominal_loss_functions):
                 losses.append(K.eval(globals()[nominal_loss_function](nts.toarray(), K.constant(rnts))))
             # first losses refers to numerical features, so we weighted them
-            # num_weight = [ self.numerical_features_length ]
-            # nom_weights = [1] * len(self.nominal_features_lengths)
-            # loss = np.average(losses, axis = 0, weights = num_weight + nom_weights)
-            # Weighted sum of losses for each sample
             loss = np.dot(np.array(losses).T, [self.numerical_weight] + self.nominal_weights)
-            # loss = [ (l-self._loss_min)/(self._loss_max-self._loss_min) + eps for l in loss ]
             pred = np.asarray([
                 -1 if l > self.normal_loss_
                 else 1 for l in loss
@@ -1021,29 +948,25 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             self.proba = np.asarray(loss)
             self.proba = np.reshape(self.proba, self.proba.shape[0])
         pred = np.reshape(pred, pred.shape[0])
+        t = time.time() - t
+        self.te_ = t
         return pred
 
     def predict_proba(self, X):
-
         if self.proba is None:
             self.predict(X)
         return self.proba
 
     def score(self, X, y=None):
-
         return 1 / np.mean(self.predict_proba(X))
 
     def set_oracle(self, oracle):
-
         self.oracle = oracle
 
     def sklearn2keras(self, features, labels=None):
-
         pass
 
     def expand_onehot_features(self, set):
-
-        # nominal_features_index = [0,1,2,5]
         nominal_features_index = [i for i, v in enumerate(set[0, :]) if isinstance(v, np.ndarray)]
         nominal_features_lengths = [len(set[0, i]) for i in nominal_features_index]
 
@@ -1076,7 +999,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         num_index = []
 
         for i, v in enumerate(set[0, :]):
-            # if isinstance(v, np.ndarray):
             if issparse(v):
                 nom_index.append(i)
             else:
@@ -1091,6 +1013,5 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
         # Fare un nom_set list di 4 ndarray ognuno con tutte le colonne dentro
         nom_set = [csr_matrix([sp[0].toarray()[0] for sp in np.vstack(v)]) for v in temp_set]
-        # nom_set = [ csr_matrix(v) for v in temp_set ]
 
         return nom_set, np.asarray(num_set, dtype=float)

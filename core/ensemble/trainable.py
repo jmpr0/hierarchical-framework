@@ -7,6 +7,7 @@ from sklearn.model_selection import StratifiedKFold
 from ..models.anomaly_detector import AnomalyDetector
 
 
+# TODO: Make it working
 class SuperLearnerClassifier(object):
     def __init__(self, first_level_learners, num_classes, anomaly_class=None, features_number=0):
 
