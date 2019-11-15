@@ -496,16 +496,19 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         if classify is None:
             classify = self.classify
 
-        if sharing_ray < 0 or sharing_ray > self.depth or grafting_depth < 0 or grafting_depth > self.depth:
+        eps = 1e-2
+        half_depth = np.floor((self.depth - eps) / 2) + 1
+
+        if sharing_ray < 0 or sharing_ray > half_depth or grafting_depth < 0 or grafting_depth > half_depth:
             print('Inserted sharing ray or grafting depth are invalid.')
             exit(1)
 
-        reduction_coeff = (1 - self.compression_ratio) / self.depth
-        reduction_factors = [1.] + [1 - reduction_coeff * (i + 1) for i in range(self.depth)]
+        reduction_coeff = self.compression_ratio ** (1 / half_depth)
+        # reduction_factors = [1.] + [1 - reduction_coeff * (i + 1) for i in range(self.depth)]
         # print(sharing_ray, grafting_depth)
         # print(reduction_coeff)
         # print(reduction_factors)
-        latent_ratio = reduction_factors[-1]
+        # latent_ratio = reduction_factors[-1]
         # This parameter is used to set the number of e/d layers nearest the middle layer to join
         # If it's more or equal than zero, the middle layer is automatically joined
         # The parameter take values in [0,self.depth], where 0 states no join
@@ -748,7 +751,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 output_shape = int(np.ceil(input_shape * reduction_coeff))
                 num_shape.append(input_shape)
                 x = Dense(output_shape, activation=num_hidden_activation_function, name='num_enc%s' % i)(x)
-                if i == self.depth - 1:
+                if i == half_depth - 1:
                     encodeds.append(x)
             # The last numerical tensor should graft on each nominal encoder
             graft_in = x
@@ -757,7 +760,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 x = input_datas[i + 1]
                 nom_shape.append([])
                 # Nominal encoder deepness depends on sharing ray
-                for j in range(self.depth - sharing_ray):
+                for j in range(half_depth - sharing_ray):
                     # Since numerical could graft on each level, we first control this
                     if j == grafting_depth:
                         x = concatenate([graft_in, x])
@@ -765,13 +768,13 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     output_shape = int(np.ceil(input_shape * reduction_coeff))
                     nom_shape[-1].append(input_shape)
                     x = Dense(output_shape, activation=nom_hidden_activation_function, name='nom_enc%s%s' % (i, j))(x)
-                    if j == self.depth - 1:
+                    if j == half_depth - 1:
                         encodeds.append(x)
                 # The last nominal tensor should be the input of shared layers
                 xs.append(x)
             x = concatenate(xs)
             # Shared layers depends on sharing ray
-            for i in range(self.depth - sharing_ray, self.depth):
+            for i in range(half_depth - sharing_ray, half_depth):
                 hybrid = True
                 if i == grafting_depth:
                     x = concatenate([graft_in, x])
@@ -779,12 +782,12 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 output_shape = int(np.ceil(input_shape * reduction_coeff))
                 hyb_shape.append(input_shape)
                 x = Dense(output_shape, activation=hyb_activation_function, name='nom_henc%s' % (i))(x)
-                if i == self.depth - 1:
+                if i == half_depth - 1:
                     encodeds.append(x)
             # Decoder
             graft_out = []
-            for i in reversed(range(self.depth - sharing_ray, self.depth)):
-                output_shape = hyb_shape[i - self.depth]
+            for i in reversed(range(half_depth - sharing_ray, half_depth)):
+                output_shape = hyb_shape[i - half_depth]
                 x = Dense(output_shape, activation=hyb_activation_function, name='nom_hdec%s' % (i))(x)
                 if i == grafting_depth:
                     graft_out.append(x)
@@ -798,7 +801,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 else:
                     x = xs[i]
                 # Nominal decoder deepness depends on sharing ray
-                for j in reversed(range(self.depth - sharing_ray)):
+                for j in reversed(range(half_depth - sharing_ray)):
                     output_shape = nom_shape[i][j]
                     x = Dense(output_shape, activation=nom_hidden_activation_function, name='nom_dec%s%s' % (i, j))(x)
                     # Since numerical could graft on each level, we first control this
