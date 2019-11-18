@@ -135,8 +135,10 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     self.nominal_output_activation_functions.append('softmax')
                     self.nominal_loss_functions.append('categorical_crossentropy')
                 elif index in self.fine_nominal_features_index:
-                    self.nominal_output_activation_functions.append('sigmoid')
-                    self.nominal_loss_functions.append('mean_squared_error')
+                    # self.nominal_output_activation_functions.append('sigmoid')
+                    # self.nominal_loss_functions.append('mean_squared_error')
+                    self.nominal_output_activation_functions.append('softmax')
+                    self.nominal_loss_functions.append('categorical_crossentropy')
 
         self.model_ = None
 
@@ -150,11 +152,13 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             self.numerical_features_length = num_X.shape[1]
         if self.nominal_output_activation_functions is None:
             self.nominal_output_activation_functions = [
-                'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'sigmoid' for v in
+                # 'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'sigmoid' for v in
+                'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'softmax' for v in
                 nom_X]
         if self.nominal_loss_functions is None:
             self.nominal_loss_functions = ['categorical_crossentropy' if np.array(
-                [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'mean_squared_error' for v in nom_X]
+                # [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'mean_squared_error' for v in nom_X]
+                [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'categorical_crossentropy' for v in nom_X]
 
         # Define weights for loss average
         if self.weight_features:
