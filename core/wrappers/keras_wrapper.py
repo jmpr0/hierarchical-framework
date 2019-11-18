@@ -48,7 +48,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                  level=0, classify=False, weight_features=False, arbitrary_discr=''):
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
-                [depth, hidden_activation_function_name, mode, sharing_ray, grafting_depth, compression_ratio]]
+                [depth, hidden_activation_function_name, mode, compression_ratio, sharing_ray, grafting_depth]]
         )
 
         if model_class == 'kmlp':
@@ -88,7 +88,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             if 'a' in mode:
                 self.auto = True
                 model_discr = model_class + '_' + '_'.join(
-                    [str(c) for c in [depth, hidden_activation_function_name, mode]]
+                    [str(c) for c in [depth, hidden_activation_function_name, mode, compression_ratio]]
                 )
         self.hidden_activation_function_name = hidden_activation_function_name
         self.hidden_activation_function = globals()[hidden_activation_function_name]
