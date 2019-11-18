@@ -27,6 +27,7 @@ from .utils.preprocessing import apply_anomalies
 from .utils.preprocessing import apply_benign_hiddens
 from .utils.preprocessing import feature_selection
 import core.utils.preprocessing
+from core.wrappers.weka_wrapper import serialization
 
 eps = np.finfo(float).eps
 
@@ -144,9 +145,13 @@ class HierarchicalClassifier(object):
     def init_output_files(self):
 
         if self.anomaly:
-            folder_discr = self.detector_class + '_'.join(self.detector_opts)
+            folder_discr = self.detector_class
+            if len(self.detector_opts) > 0:
+            	folder_discr += '_' + '_'.join(self.detector_opts)
         else:
-            folder_discr = self.classifier_class + '_'.join(self.classifier_opts)
+            folder_discr = self.classifier_class
+            if len(self.classifier_opts) > 0:
+            	folder_discr += '_' + '_'.join(self.classifier_opts)
 
         if self.has_config:
             folder_discr = self.config_name
@@ -256,10 +261,10 @@ class HierarchicalClassifier(object):
 
         for fout in fouts:
             with open(fout, 'a') as file:
-                if 'proba' in fout:
-                    file.write('@fold %s\n' % ' '.join(['Actual'] + labels))
+                if self.anomaly:
+                	file.write('@fold Actual Pred\n')
                 else:
-                    file.write('@fold Actual Pred\n')
+                	file.write('@fold %s\n' % ' '.join(['Actual'] + labels))
 
     def write_pred(self, oracle, pred, level, tag, _all=False, arbitrary_discr=None):
 
@@ -687,9 +692,13 @@ class HierarchicalClassifier(object):
             print('')
 
             for node in nodes:
-                pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.pickle' %
-                        (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
-
+                try:
+                    pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.pickle' %
+                            (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
+                except:
+                	serialization.write('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.model' %
+                            (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),
+                            node.model_wrapper.model_)
         # MEAN WEIGHT MODEL
         # if self.anomaly and self.deep:
 
@@ -900,7 +909,7 @@ class HierarchicalClassifier(object):
 
     def Weka_Classifier(self, node):
         # Instantation
-        model = SklearnWekaWrapper(node.model_class)
+        model = SklearnWekaWrapper(node.classifier_class)
         return model
 
     def Weka_NaiveBayes(self, node):

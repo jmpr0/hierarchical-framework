@@ -48,9 +48,14 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                  level=0, classify=False, weight_features=False, arbitrary_discr=''):
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
-             [depth, hidden_activation_function_name, mode, sharing_ray, grafting_depth, compression_ratio]]
+                [depth, hidden_activation_function_name, mode, sharing_ray, grafting_depth, compression_ratio]]
         )
 
+        if model_class == 'kmlp':
+            model_discr = model_class + '_' + '_'.join(
+                [str(c) for c in
+                    [depth, hidden_activation_function_name, mode]]
+            )
 
         self.sharing_ray = int(sharing_ray)
         self.grafting_depth = int(grafting_depth)
@@ -500,10 +505,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         if classify is None:
             classify = self.classify
 
-        if sharing_ray < 0 or sharing_ray > self.half_depth or grafting_depth < 0 or grafting_depth > self.half_depth:
-            print('Inserted sharing ray or grafting depth are invalid.')
-            exit(1)
-
         reduction_coeff = self.compression_ratio ** (1 / self.half_depth)
         adj_factor = 0
         if self.depth % 2 != 0:
@@ -550,6 +551,10 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 compression_models.append(compression_model)
 
         if model_class == 'kdae' or model_class == 'kc2dae':
+
+            if sharing_ray < 0 or sharing_ray > self.half_depth or grafting_depth < 0 or grafting_depth > self.half_depth:
+                print('Inserted sharing ray or grafting depth are invalid.')
+                exit(1)
             # shared_factors = []
             # if sharing_ray > 0:
             #     shared_factors = reduction_factors[-sharing_ray:] + reduction_factors[::-1][1:sharing_ray + 1]

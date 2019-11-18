@@ -5,6 +5,7 @@ from weka.classifiers import Classifier
 from weka.core.dataset import Attribute
 from weka.core.converters import ndarray_to_instances
 import weka.core.jvm as jvm
+import weka.core.serialization as serialization
 
 
 class SklearnWekaWrapper(object):
