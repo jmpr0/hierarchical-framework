@@ -42,8 +42,8 @@ eps = 1e-2
 
 class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
-    def __init__(self, depth='3', hidden_activation_function_name='elu', mode='n', sharing_ray='3', grafting_depth='0',
-                 compression_ratio='.1', model_class='kdae', epochs_number=10, num_classes=1,
+    def __init__(self, depth='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1', sharing_ray='3',
+                 grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
                  level=0, classify=False, weight_features=False, arbitrary_discr=''):
         model_discr = model_class + '_' + '_'.join(
@@ -52,7 +52,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         )
 
 
-        # TODO: pass the compression_ratio after the mode, because CR can be set also in auto mode, but Sr and Gd.
         self.sharing_ray = int(sharing_ray)
         self.grafting_depth = int(grafting_depth)
         self.depth = int(depth)
