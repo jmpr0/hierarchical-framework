@@ -867,7 +867,7 @@ class HierarchicalClassifier(object):
         model = AnomalyDetector(node.detector_class, node.detector_opts,
                                      node.label_encoder.transform([self.anomaly_class])[0], node.features_number,
                                      self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize,
-                                     self.weight_features, self.workers_number, self.unsupervised)
+                                     self.weight_features, self.workers_number, self.unsupervised, self.arbitrary_discr)
         return model
 
     def Spark_Classifier(self, node):
