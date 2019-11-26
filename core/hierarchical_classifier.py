@@ -83,7 +83,7 @@ class HierarchicalClassifier(object):
                  classifier_class, classifier_opts, detector_class, detector_opts, workers_number, anomaly_classes,
                  epochs_number, arbitrary_discr, n_clusters, anomaly, deep, hidden_classes, benign_class,
                  nominal_features_index,
-                 optimize, weight_features, parallelize, buckets_number, unsupervised):
+                 optimize, weight_features, parallelize, buckets_number, unsupervised, multimodal_index):
 
         self.input_file = input_file
         self.levels_number = levels_number
@@ -113,6 +113,11 @@ class HierarchicalClassifier(object):
         self.weight_features = weight_features
         self.parallelize = parallelize
         self.unsupervised = unsupervised
+        self.multimodal_index = multimodal_index
+        if self.multimodal_index >= 0:
+            self.multimodal = True
+        else:
+            self.multimodal = False
 
         self.super_learner_default = ['ssv', 'sif']
 
@@ -147,11 +152,11 @@ class HierarchicalClassifier(object):
         if self.anomaly:
             folder_discr = self.detector_class
             if len(self.detector_opts) > 0:
-            	folder_discr += '_' + '_'.join(self.detector_opts)
+                folder_discr += '_' + '_'.join(self.detector_opts)
         else:
             folder_discr = self.classifier_class
             if len(self.classifier_opts) > 0:
-            	folder_discr += '_' + '_'.join(self.classifier_opts)
+                folder_discr += '_' + '_'.join(self.classifier_opts)
 
         if self.has_config:
             folder_discr = self.config_name
@@ -262,9 +267,9 @@ class HierarchicalClassifier(object):
         for fout in fouts:
             with open(fout, 'a') as file:
                 if self.anomaly:
-                	file.write('@fold Actual Pred\n')
+                    file.write('@fold Actual Pred\n')
                 else:
-                	file.write('@fold %s\n' % ' '.join(['Actual'] + labels))
+                    file.write('@fold %s\n' % ' '.join(['Actual'] + labels))
 
     def write_pred(self, oracle, pred, level, tag, _all=False, arbitrary_discr=None):
 
@@ -414,17 +419,21 @@ class HierarchicalClassifier(object):
             self.features = data[:, :self.dataset_features_number]
             self.labels = data[:, self.dataset_features_number:]
 
+            modalities = None
             # Preprocessing
             if self.detector_class == 'mlo':
                 mode = core.utils.preprocessing.MLO
+            elif self.multimodal:
+                modalities = [x[2][self.multimodal_index] for x in dataset['attributes'][:self.dataset_features_number]]
+                mode = core.utils.preprocessing.MULMO
             else:
                 mode = core.utils.preprocessing.CUSTOM
                 if not self.deep:
                     mode += '-' + core.utils.preprocessing.FLATTEN
             self.features = core.utils.preprocessing.preprocess_dataset(self.features, self.nominal_features_index,
-                                                                        mode)
+                                                                        mode=mode, modalities=modalities)
 
-            # After dataset preprocessing, we could update informations about dimensions
+            # After dataset preprocessing, we could update information about dimensions
             self.attributes_number = self.features.shape[1] + self.levels_number
             self.dataset_features_number = self.features.shape[1]
 
@@ -696,7 +705,7 @@ class HierarchicalClassifier(object):
                     pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.pickle' %
                             (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
                 except:
-                	serialization.write('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.model' %
+                    serialization.write('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.model' %
                             (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),
                             node.model_wrapper.model_)
         # MEAN WEIGHT MODEL
@@ -865,9 +874,10 @@ class HierarchicalClassifier(object):
     def _AnomalyDetector(self, node):
         # Instantation
         model = AnomalyDetector(node.detector_class, node.detector_opts,
-                                     node.label_encoder.transform([self.anomaly_class])[0], node.features_number,
-                                     self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize,
-                                     self.weight_features, self.workers_number, self.unsupervised, self.arbitrary_discr)
+                                node.label_encoder.transform([self.anomaly_class])[0], node.features_number,
+                                self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize,
+                                self.weight_features, self.workers_number, self.unsupervised, self.arbitrary_discr,
+                                self.multimodal)
         return model
 
     def Spark_Classifier(self, node):
@@ -934,13 +944,14 @@ class HierarchicalClassifier(object):
         return model
 
     def train(self, node):
-        # TODO: applying preprocessing per node
-        node.features_index = feature_selection(
-            self.features[node.train_index],
-            node.label_encoder.transform(self.labels[node.train_index, node.level]),
-            node.features_number,
-            self.dataset_features_number
-        )
+        if not self.multimodal:
+            # TODO: applying preprocessing per node
+            node.features_index = feature_selection(
+                self.features[node.train_index],
+                node.label_encoder.transform(self.labels[node.train_index, node.level]),
+                node.features_number,
+                self.dataset_features_number
+            )
         node.model_wrapper.fit(
             self.features[node.train_index][:, node.features_index],
             node.label_encoder.transform(self.labels[node.train_index, node.level])

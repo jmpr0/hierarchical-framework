@@ -12,9 +12,10 @@ CLASSIC = 'classic'
 CUSTOM = 'custom'
 FLATTEN = 'flatten'
 MLO = 'mlo'
+MULMO = 'multimodal'
 
 
-def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
+def preprocess_dataset(X, nominal_features_index, mode=CLASSIC, modalities=None):
     if CLASSIC in mode:
         pass
     elif CUSTOM in mode:
@@ -29,6 +30,10 @@ def preprocess_dataset(X, nominal_features_index, mode=CLASSIC):
         X = pca(X, n_components=10)
         # Z-score
         X = z_score(X)
+    elif MULMO in mode:
+        ohe(X, nominal_features_index)
+        multimodal_split(X, modalities)
+        pass
     if FLATTEN in mode:
         X = sparse_flattening(X)
     return X
@@ -67,6 +72,7 @@ def oe(X, nominal_features_index):
 
 
 def pca(X, k_best=None, n_components=None):
+    X_decomp = None
     if k_best is not None:
         features_decomposer = PCA()
         features_decomposer.fit(X)
@@ -143,3 +149,17 @@ def feature_selection(X, y, features_number, dataset_features_number):
     #         node.features_index = np.r_[0:node.packets_number,
     #                          dataset_features_number / 2:dataset_features_number / 2 + node.packets_number]
     return features_index
+
+
+def multimodal_split(X, modalities):
+    modalities = OrdinalEncoder().fit_transform(np.asarray(modalities).reshape(-1,1))
+    unique_modalities, mod_counts = np.unique(modalities, return_counts=True)
+    X_mulmo = np.empty(len(unique_modalities), dtype=object)
+    for u_modality, mod_count in zip(unique_modalities, mod_counts):
+        X_mulmo[int(u_modality)] = np.empty(mod_count, dtype=object)
+        cnt = 0
+        for i, modality in enumerate(modalities):
+            if u_modality == modality:
+                X_mulmo[int(u_modality)][cnt] = X[:, i]
+                cnt += 1
+    return np.asarray(X_mulmo.T)

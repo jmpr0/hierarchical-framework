@@ -45,7 +45,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, depth='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1', sharing_ray='3',
                  grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
-                 level=0, classify=False, weight_features=False, arbitrary_discr=''):
+                 level=0, classify=False, weight_features=False, arbitrary_discr='', multimodal=False):
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
                 [depth, hidden_activation_function_name, mode, compression_ratio, sharing_ray, grafting_depth]]
@@ -66,6 +66,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.variational = False
         self.denoising = False
         self.propagational = False
+        self.multimodal = multimodal
         self.auto = False
         self.mode = mode
         self.fold = fold
@@ -148,6 +149,253 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.model_ = None
 
     def fit(self, X, y=None):
+        if not self.multimodal:
+            return self.nom_num_fit(X, y)
+        else:
+            return self.mulmo_fit(X, y)
+
+    def nom_num_fit(self, X, y=None):
+        nom_X, num_X = self.split_nom_num_features(X)
+
+        # If current parameters are not previously initialized, classifier would infer them from training set
+        if self.nominal_features_lengths is None:
+            self.nominal_features_lengths = [v[0][0].shape[1] for v in nom_X]
+        if self.numerical_features_length is None:
+            self.numerical_features_length = num_X.shape[1]
+        if self.nominal_output_activation_functions is None:
+            self.nominal_output_activation_functions = [
+                # 'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'sigmoid' for v in
+                'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'softmax' for v in
+                nom_X]
+        if self.nominal_loss_functions is None:
+            self.nominal_loss_functions = ['categorical_crossentropy' if np.array(
+                # [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'mean_squared_error' for v in nom_X]
+                [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'categorical_crossentropy' for v in nom_X]
+
+        # Define weights for loss average
+        if self.weight_features:
+            self.numerical_weight = self.numerical_features_length
+        else:
+            self.numerical_weight = 1
+        self.nominal_weights = [1] * len(self.nominal_features_lengths)
+
+        reconstruction_models, _, classification_models, models_names = self.init_models(self.model_class,
+                                                                                         self.num_classes,
+                                                                                         self.classify)
+        # Scaling training set for Autoencoder
+        one_hot_y = None
+        scaled_num_X = self.scaler.fit_transform(num_X)
+        if self.classify:
+            one_hot_y = self.label_encoder.fit_transform(y.reshape(-1, 1))
+        normal_losses_per_fold = []
+        times_per_fold = []
+        if len(reconstruction_models) > 1:
+            # Iterating over all the models to find the best
+            for index in range(len(reconstruction_models)):
+                print('\nStarting StratifiedKFold for %s\n' % models_names[index])
+                skf = StratifiedKFold(n_splits=self.k_internal_fold, shuffle=True)
+                normal_losses_per_fold.append([])
+                times_per_fold.append([])
+                f = 0
+                reconstruction_model = reconstruction_models[index]
+                classification_model = classification_models[index]
+                for train_index, validation_index in skf.split(
+                        np.zeros(shape=(
+                                num_X.shape[0], self.numerical_features_length + len(self.nominal_features_lengths))),
+                        y):
+                    # To reduce amount of similar models to built, we save initial weights at first fold, than we will use this for subsequent folds.
+                    if f == 0:
+                        reconstruction_model.save_weights(self.checkpoint_file)
+                    else:
+                        reconstruction_model.load_weights(self.checkpoint_file)
+                    f += 1
+                    print('\nFold %s\n' % f)
+                    # for _model in self._models:
+                    if not self.denoising:
+                        times_per_fold[-1].append(time.time())
+                        # Train Autoencoder
+                        train_history = \
+                            reconstruction_model.fit(
+                                [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
+                                                                  nom_X],
+                                [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
+                                                                  nom_X],
+                                epochs=self.epochs_number,
+                                batch_size=32,
+                                shuffle=True,
+                                verbose=2,
+                                # validation_split = 0.1,
+                                validation_data=(
+                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
+                                                                           nom_training in nom_X],
+                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
+                                                                           nom_training in nom_X]
+                                ),
+                                callbacks=[
+                                    EarlyStopping(monitor='val_loss', patience=self.patience, min_delta=self.min_delta),
+                                    CSVLogger(self.log_file)
+                                ]
+                            )
+                        if self.classify:
+                            for layer in reconstruction_model:
+                                layer.trainable = False
+                            train_history = \
+                                classification_model.fit(
+                                    [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
+                                                                      nom_X],
+                                    one_hot_y[train_index, :],
+                                    epochs=self.epochs_number,
+                                    batch_size=32,
+                                    shuffle=True,
+                                    verbose=2,
+                                    # validation_split = 0.1,
+                                    validation_data=(
+                                        [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
+                                                                               nom_training in nom_X],
+                                        one_hot_y[validation_index, :]
+                                    ),
+                                    callbacks=[
+                                        EarlyStopping(monitor='val_loss', patience=self.patience,
+                                                      min_delta=self.min_delta),
+                                        CSVLogger(self.log_file)
+                                    ]
+                                )
+                    else:
+                        noise_factor = .5
+                        noisy_scaled_num_X = scaled_num_X[train_index, :] + noise_factor * np.random.normal(loc=.0,
+                                                                                                            scale=1.,
+                                                                                                            size=scaled_num_X[
+                                                                                                                 train_index,
+                                                                                                                 :].shape)
+                        times_per_fold[-1].append(time.time())
+                        # Train Autoencoder
+                        train_history = \
+                            reconstruction_model.fit(
+                                [noisy_scaled_num_X] + [nom_training[train_index, :] for nom_training in nom_X],
+                                [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
+                                                                  nom_X],
+                                epochs=self.epochs_number,
+                                batch_size=32,
+                                shuffle=True,
+                                verbose=2,
+                                # validation_split = 0.1,
+                                validation_data=(
+                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
+                                                                           nom_training in nom_X],
+                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
+                                                                           nom_training in nom_X]
+                                ),
+                                callbacks=[
+                                    EarlyStopping(monitor='val_loss', patience=self.patience, min_delta=self.min_delta),
+                                    CSVLogger(self.log_file)
+                                ]
+                            )
+                    normal_losses_per_fold[-1].append(self.get_loss(train_history.history, 'val_loss'))
+                    times_per_fold[-1][-1] = time.time() - times_per_fold[-1][-1]
+                normal_losses_per_fold[-1] = np.asarray(normal_losses_per_fold[-1])
+                times_per_fold[-1] = np.asarray(times_per_fold[-1])
+            mean_normal_losses = np.mean(normal_losses_per_fold, axis=1)
+            std_normal_losses = np.std(normal_losses_per_fold, axis=1)
+            # We use the sum of mean and std deviation to choose the best model
+            meanPstd_normal_losses = mean_normal_losses + std_normal_losses
+            mean_times = np.mean(times_per_fold, axis=1)
+            # Saving losses per model
+            with open(self.losses_file, 'a') as f:
+                for mean_normal_loss, std_normal_loss, model_name in zip(mean_normal_losses, std_normal_losses,
+                                                                         models_names):
+                    f.write('%s %s %s\n' % (mean_normal_loss, std_normal_loss, model_name))
+            min_loss = np.min(meanPstd_normal_losses)
+            print(meanPstd_normal_losses)
+            best_model_index = list(meanPstd_normal_losses).index(min_loss)
+            best_model_name = models_names[best_model_index]
+            t = np.max(mean_times)
+            print(t)
+        else:
+            best_model_name = models_names[0]
+        t = 0
+        reconstruction_models = None
+        classification_models = None
+        del reconstruction_models
+        del classification_models
+        gc.collect()
+        sharing_ray = int(best_model_name.split('_')[1])
+        grafting_depth = int(best_model_name.split('_')[2])
+        self.reconstruction_model_, _, self.classification_model_, _ = self.init_model(self.model_class, sharing_ray,
+                                                                                       grafting_depth, self.num_classes,
+                                                                                       self.classify)
+        train_history = None
+        if not self.denoising:
+            t = time.time() - t
+            if self.reconstruction_model_ is not None:
+                # Train Autoencoder
+                train_history = \
+                    self.reconstruction_model_.fit(
+                        [scaled_num_X] + nom_X,
+                        [scaled_num_X] + nom_X,
+                        epochs=self.epochs_number,
+                        batch_size=32,
+                        shuffle=True,
+                        verbose=2,
+                        callbacks=[
+                            EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
+                            CSVLogger(self.log_file)
+                        ]
+                    )
+                if self.classify:
+                    for layer in self.reconstruction_model_.layers:
+                        layer.trainable = False
+            if self.classify:
+                train_history = \
+                    self.classification_model_.fit(
+                        [scaled_num_X] + nom_X,
+                        one_hot_y,
+                        epochs=self.epochs_number,
+                        batch_size=32,
+                        shuffle=True,
+                        verbose=2,
+                        callbacks=[
+                            EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
+                            CSVLogger(self.log_file)
+                        ]
+                    )
+        # TODO: denoising training definition
+        else:
+            noise_factor = .5
+            noisy_scaled_num_X = scaled_num_X[train_index, :] + noise_factor * np.random.normal(loc=.0, scale=1.,
+                                                                                                size=scaled_num_X[
+                                                                                                     train_index,
+                                                                                                     :].shape)
+            t = time.time() - t
+            # Train Autoencoder
+            train_history = \
+                self.reconstruction_model_.fit(
+                    [noisy_scaled_num_X] + nom_X,
+                    [scaled_num_X] + nom_X,
+                    epochs=self.epochs_number,
+                    batch_size=32,
+                    shuffle=True,
+                    verbose=2,
+                    callbacks=[
+                        EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
+                        CSVLogger(self.log_file)
+                    ]
+                )
+        self.normal_loss_ = self.get_loss(train_history.history, 'loss')
+        t = time.time() - t
+        if self.reconstruction_model_ is not None:
+            self.model_ = self.reconstruction_model_
+            with open(self.summary_file + '_best_reconstruction_model_' + best_model_name + '.dat', 'w') as f:
+                self.reconstruction_model_.summary(print_fn=lambda x: f.write(x + '\n'))
+        if self.classify:
+            self.model_ = self.classification_model_
+            with open(self.summary_file + '_best_classification_model_' + best_model_name + '.dat', 'w') as f:
+                self.classification_model_.summary(print_fn=lambda x: f.write(x + '\n'))
+        print('loss', self.normal_loss_)
+        print('Training time', t)
+        self.tr_ = t
+        return self
+
+    def mulmo_fit(self, X, y=None):
         nom_X, num_X = self.split_nom_num_features(X)
 
         # If current parameters are not previously initialized, classifier would infer them from training set
@@ -508,7 +756,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         reduction_coeff = self.compression_ratio ** (1 / self.half_depth)
         adj_factor = 0
         if self.depth % 2 != 0:
-        	adj_factor = 1
+            adj_factor = 1
         # reduction_factors = [1.] + [1 - reduction_coeff * (i + 1) for i in range(self.depth)]
         # print(sharing_ray, grafting_depth)
         # print(reduction_coeff)

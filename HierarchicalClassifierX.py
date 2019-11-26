@@ -49,6 +49,7 @@ unsupervised = False
 optimize = False
 nominal_features_index = None
 n_clusters = 1
+multimodal_index = -1
 
 # Execution infos
 workers_number = 0
@@ -68,7 +69,7 @@ detector_opts = ''
 
 try:
     opts, args = getopt.getopt(
-        sys.argv[1:], "hi:n:t:f:p:c:o:w:x:a:e:d:s:C:H:b:N:OT:WPB:UF:G:EM",
+        sys.argv[1:], "hi:n:t:f:p:c:o:w:x:a:e:d:s:C:H:b:N:OT:WPB:UF:G:EMm:",
         "[input_file=,levels_number=,max_level_target=,features_number=,packets_number=,\
             classifier_name=,configuration=,workers_number=,executors_number=,anomaly_class=,\
             epochs_number=,detector_name=,arbitrary_discriminator=,n_clusters=,hidden_classes=,\
@@ -160,6 +161,8 @@ for opt, arg in opts:
         early = True
     if opt in ("-M", "--memoryless"):
         memoryless = True
+    if opt in ("-m", "--multimodal"):
+        multimodal_index = int(arg)
 
 if anomaly_classes != '' or (benign_class != '' and hidden_classes == ''):
     anomaly = True
@@ -311,6 +314,7 @@ hierarchical_classifier = HierarchicalClassifier(
     parallelize=parallelize,
     buckets_number=buckets_number,
     unsupervised=unsupervised,
+    multimodal_index=multimodal_index
 )
 
 if config:
