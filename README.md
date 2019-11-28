@@ -1,4 +1,4 @@
-hierarchical-framework
+HierFrame
 ======================
 
 <pre>
@@ -11,7 +11,13 @@ hierarchical-framework
 
 ## Description
 
-Repository for the release of the code used in the paper ["A Dive into the Dark Web: Hierarchical Traffic Classification of Anonymity Tools"](https://ieeexplore.ieee.org/document/8663403).
+The Hierarchical Framework (HierFrame) for Traffic Classification borns as publicly available implementation of the proposal paper ["A Dive into the Dark Web: Hierarchical Traffic Classification of Anonymity Tools"](https://ieeexplore.ieee.org/document/8663403).
+
+HierFrame is an active project where new features are constantly introduced, as the enabling to BigData frameworks or the support to a wide range of Machine Learning and Deep Learning models.
+
+HierFrame is used to conduct experimental analysis on the following under review paper:
+
+Bovenzi, Giampaolo, Giuseppe Aceto, Domenico Ciuonzo, Valerio Persico, and Antonio Pescapé. "_Double Parallelism in Traffic Classification: Big Data-enabled Hierarchical (BDeH) Framework._" under revision at IEEE Transactions on Network Science and Engineering (2019).
 
 If you use this code, please cite the following paper:
 
