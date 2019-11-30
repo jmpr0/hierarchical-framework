@@ -11,11 +11,13 @@ HierFrame
 
 ## Description
 
-The Hierarchical Framework (HierFrame) for Traffic Classification borns as publicly available implementation of the proposal paper ["A Dive into the Dark Web: Hierarchical Traffic Classification of Anonymity Tools"](https://ieeexplore.ieee.org/document/8663403).
+The Hierarchical Framework (HierFrame) for Traffic Classification is born as publicly available implementation of the proposal paper ["A Dive into the Dark Web: Hierarchical Traffic Classification of Anonymity Tools"](https://ieeexplore.ieee.org/document/8663403).
 
-HierFrame is an active project where new features are constantly introduced, as the enabling to BigData frameworks or the support to a wider range of Machine Learning and Deep Learning models.
+HierFrame is an active project where new features are constantly introduced
+as the support to a wider range of Machine Learning and Deep Learning models.
 
-HierFrame is used to conduct experimental analysis on the following under review paper:
+The latter significant improvement has led to the Big Data-enebled Hierarchical (BDeH) framework, that enhances HierFrame with the data parallelism leveraging the Apache Spark BD solution.
+BDeH formalization and experimental evaluation is presented in the following paper (under review):
 
 Bovenzi, Giampaolo, Giuseppe Aceto, Domenico Ciuonzo, Valerio Persico, and Antonio Pescapé. "_Double Parallelism in Traffic Classification: Big Data-enabled Hierarchical (BDeH) Framework._" under revision at IEEE Transactions on Network Science and Engineering (2019).
 
