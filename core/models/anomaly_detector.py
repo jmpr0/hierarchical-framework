@@ -16,7 +16,7 @@ class AnomalyDetector(object):
 
     def __init__(self, detector_class, detector_opts, anomaly_class=None, features_number=0, epochs_number=0,
                  level=0, fold=0, n_clusters=1, optimize=False, weight_features=False, workers_number=1,
-                 unsupervised=False, arbitrary_discr=''):
+                 unsupervised=False, arbitrary_discr='', multimodal=False):
 
         self.anomaly_class = anomaly_class
         if self.anomaly_class == 1:
@@ -87,7 +87,7 @@ class AnomalyDetector(object):
                     self.anomaly_detector = SklearnKerasWrapper(*detector_opts, model_class=detector_class,
                                                                 num_classes=2, epochs_number=epochs_number, level=level,
                                                                 fold=fold, weight_features=weight_features,
-                                                                arbitrary_discr=arbitrary_discr)
+                                                                arbitrary_discr=arbitrary_discr, multimodal=multimodal)
                 else:
                     # Parameters for Grid Search
                     anomaly_detector = SklearnKerasWrapper()
