@@ -16,7 +16,7 @@ class AnomalyDetector(object):
 
     def __init__(self, detector_class, detector_opts, anomaly_class=None, features_number=0, epochs_number=0,
                  level=0, fold=0, n_clusters=1, optimize=False, weight_features=False, workers_number=1,
-                 unsupervised=False, arbitrary_discr='', multimodal=False):
+                 unsupervised=False, arbitrary_discr='', modalities=None):
 
         self.anomaly_class = anomaly_class
         if self.anomaly_class == 1:
@@ -31,6 +31,7 @@ class AnomalyDetector(object):
         self.optimize = optimize
         self.unsupervised = unsupervised
         self.anomaly_detectors = []
+        self.multimodal = modalities is not None
         for _ in range(self.n_clusters):
             if detector_class == 'ssv':
                 if not self.optimize:
@@ -87,7 +88,7 @@ class AnomalyDetector(object):
                     self.anomaly_detector = SklearnKerasWrapper(*detector_opts, model_class=detector_class,
                                                                 num_classes=2, epochs_number=epochs_number, level=level,
                                                                 fold=fold, weight_features=weight_features,
-                                                                arbitrary_discr=arbitrary_discr, multimodal=multimodal)
+                                                                arbitrary_discr=arbitrary_discr, modalities=modalities)
                 else:
                     # Parameters for Grid Search
                     anomaly_detector = SklearnKerasWrapper()
@@ -124,10 +125,12 @@ class AnomalyDetector(object):
         else:
             normal_index = [i for i in range(len(ground_truth))]
 
-        if self.dl:
+        if self.dl and not self.multimodal:
             local_training_set = training_set[normal_index]
             clustering_training_set, self.train_scaler = self.scale_n_flatten(training_set[normal_index],
                                                                               return_scaler=True)
+        elif self.multimodal:
+            local_training_set = [[t[normal_index] for t in ts] for ts in training_set]
         else:
             local_training_set, self.train_scaler = self.scale_n_flatten(training_set[normal_index], return_scaler=True)
             clustering_training_set = local_training_set
@@ -183,9 +186,11 @@ class AnomalyDetector(object):
 
     def predict(self, testing_set):
 
-        if self.dl:
+        if self.dl and not self.multimodal:
             local_testing_set = testing_set
             clustering_testing_set = self.scale_n_flatten(testing_set, self.train_scaler)
+        elif self.multimodal:
+            local_testing_set = testing_set
         else:
             local_testing_set = self.scale_n_flatten(testing_set, self.train_scaler)
             clustering_testing_set = local_testing_set
@@ -213,9 +218,13 @@ class AnomalyDetector(object):
 
     def predict_proba(self, testing_set):
 
-        if self.dl:
+        if self.dl and not self.multimodal:
             local_testing_set = testing_set
             clustering_testing_set = self.scale_n_flatten(testing_set, self.train_scaler)
+            score = self.anomaly_detector.predict_proba
+            scores = [ad.predict_proba for ad in self.anomaly_detectors]
+        elif self.multimodal:
+            local_testing_set = testing_set
             score = self.anomaly_detector.predict_proba
             scores = [ad.predict_proba for ad in self.anomaly_detectors]
         else:

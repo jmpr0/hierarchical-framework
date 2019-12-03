@@ -7,7 +7,6 @@ from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import mutual_info_classif
 from sklearn.preprocessing import scale
 
-
 CLASSIC = 'classic'
 CUSTOM = 'custom'
 FLATTEN = 'flatten'
@@ -32,7 +31,7 @@ def preprocess_dataset(X, nominal_features_index, mode=CLASSIC, modalities=None)
         X = z_score(X)
     elif MULMO in mode:
         ohe(X, nominal_features_index)
-        multimodal_split(X, modalities)
+        X = multimodal_split(X, modalities)
         pass
     if FLATTEN in mode:
         X = sparse_flattening(X)
@@ -68,7 +67,7 @@ def oe(X, nominal_features_index):
     if len(nominal_features_index) > 1:
         X[:, nominal_features_index] = features_encoder.fit_transform(X[:, nominal_features_index])
     else:
-        X[:, nominal_features_index] = features_encoder.fit_transform(X[:, nominal_features_index].reshape(-1,1))
+        X[:, nominal_features_index] = features_encoder.fit_transform(X[:, nominal_features_index].reshape(-1, 1))
 
 
 def pca(X, k_best=None, n_components=None):
@@ -152,7 +151,8 @@ def feature_selection(X, y, features_number, dataset_features_number):
 
 
 def multimodal_split(X, modalities):
-    modalities = OrdinalEncoder().fit_transform(np.asarray(modalities).reshape(-1,1))
+    n_samples = X.shape[0]
+    modalities = OrdinalEncoder().fit_transform(np.asarray(modalities).reshape(-1, 1))
     unique_modalities, mod_counts = np.unique(modalities, return_counts=True)
     X_mulmo = np.empty(len(unique_modalities), dtype=object)
     for u_modality, mod_count in zip(unique_modalities, mod_counts):
@@ -162,4 +162,21 @@ def multimodal_split(X, modalities):
             if u_modality == modality:
                 X_mulmo[int(u_modality)][cnt] = X[:, i]
                 cnt += 1
-    return np.asarray(X_mulmo.T)
+    X_mulmo_joined = []
+    for single_mod, mod_count in zip(X_mulmo, mod_counts):
+        X_mulmo_joined.append([])
+        num_index = -1
+        for feature in single_mod:
+            if issparse(feature[0]):
+                X_mulmo_joined[-1].append(feature)
+            elif num_index < 0:
+                num_index = len(X_mulmo_joined[-1])
+                X_mulmo_joined[-1].append(feature)
+            else:
+                try:
+                    X_mulmo_joined[-1][num_index] = np.concatenate(
+                        (X_mulmo_joined[-1][num_index], feature.reshape(-1, 1)), axis=1)
+                except np.AxisError:
+                    X_mulmo_joined[-1][num_index] = np.concatenate(
+                        (X_mulmo_joined[-1][num_index].reshape(-1, 1), feature.reshape(-1, 1)), axis=1)
+    return np.asarray(X_mulmo_joined)

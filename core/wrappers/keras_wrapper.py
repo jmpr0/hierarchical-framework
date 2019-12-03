@@ -8,7 +8,7 @@ from scipy.sparse import csr_matrix
 
 from sklearn.base import BaseEstimator
 from sklearn.base import ClassifierMixin
-from sklearn.preprocessing import QuantileTransformer
+from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import StratifiedKFold
 
@@ -42,19 +42,20 @@ eps = 1e-2
 
 class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
-    def __init__(self, depth='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1', sharing_ray='3',
+    def __init__(self, depth='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1',
+                 sharing_ray='0',
                  grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
-                 level=0, classify=False, weight_features=False, arbitrary_discr='', multimodal=False):
+                 level=0, classify=False, weight_features=False, arbitrary_discr='', modalities=None):
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
-                [depth, hidden_activation_function_name, mode, compression_ratio, sharing_ray, grafting_depth]]
+             [depth, hidden_activation_function_name, mode, compression_ratio, sharing_ray, grafting_depth]]
         )
 
         if model_class == 'kmlp':
             model_discr = model_class + '_' + '_'.join(
                 [str(c) for c in
-                    [depth, hidden_activation_function_name, mode]]
+                 [depth, hidden_activation_function_name, mode]]
             )
 
         self.sharing_ray = int(sharing_ray)
@@ -66,7 +67,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.variational = False
         self.denoising = False
         self.propagational = False
-        self.multimodal = multimodal
+        self.multimodal = modalities is not None
+        self.modalities = modalities
         self.auto = False
         self.mode = mode
         self.fold = fold
@@ -121,7 +123,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.losses_file = '%s/%s_%s_model_%s_l_%s_losses.dat' % (
             summary_folder, arbitrary_discr, fold, model_discr, level + 1)
         self.checkpoint_file = "%s/%s_weights.hdf5" % (tmp_folder, arbitrary_discr)
-        self.scaler = QuantileTransformer()
+        self.scaler = MinMaxScaler()
+        self.scalers = []
         self.label_encoder = OneHotEncoder()
         self.proba = None
         # For internal optimization
@@ -396,222 +399,62 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         return self
 
     def mulmo_fit(self, X, y=None):
-        nom_X, num_X = self.split_nom_num_features(X)
+        self.num_modality = len(X)
+        self.nominal_features_index = [
+            [i for i in range(len(modality)) if issparse(modality[i][0])] for modality in X]
+        self.multimodal_feature_lengths = [
+            [feature[0].shape[1] if j in index else feature.shape[1] for j, feature in enumerate(modality)] for
+            modality, index in
+            zip(X, self.nominal_features_index)]
+        self.multimodal_loss_functions = [
+            ['categorical_crossentropy' if j in index else 'mean_squared_error' for j, feature in enumerate(modality)] for
+            modality, index in
+            zip(X, self.nominal_features_index)]
+        self.multimodal_loss_functions = [e for a in self.multimodal_loss_functions for e in a]
+        self.multimodal_output_functions = [
+            ['softmax' if j in index else 'sigmoid' for j, feature in enumerate(modality)] for
+            modality, index in
+            zip(X, self.nominal_features_index)]
 
-        # If current parameters are not previously initialized, classifier would infer them from training set
-        if self.nominal_features_lengths is None:
-            self.nominal_features_lengths = [v[0][0].shape[1] for v in nom_X]
-        if self.numerical_features_length is None:
-            self.numerical_features_length = num_X.shape[1]
-        if self.nominal_output_activation_functions is None:
-            self.nominal_output_activation_functions = [
-                # 'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'sigmoid' for v in
-                'softmax' if np.array([np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'softmax' for v in
-                nom_X]
-        if self.nominal_loss_functions is None:
-            self.nominal_loss_functions = ['categorical_crossentropy' if np.array(
-                # [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'mean_squared_error' for v in nom_X]
-                [np.sum(r) == 1 and np.max(r) == 1 for r in v]).all() else 'categorical_crossentropy' for v in nom_X]
-
-        # Define weights for loss average
-        if self.weight_features:
-            self.numerical_weight = self.numerical_features_length
-        else:
-            self.numerical_weight = 1
-        self.nominal_weights = [1] * len(self.nominal_features_lengths)
+        # Weighted is enabled by default
+        self.multimodal_weights = [
+            [1 if j in index else self.multimodal_feature_lengths[m][j] for j, feature in enumerate(modality)] for
+            m, (modality, index) in
+            enumerate(zip(X, self.nominal_features_index))]
+        self.multimodal_weights = [e for a in self.multimodal_weights for e in a]
 
         reconstruction_models, _, classification_models, models_names = self.init_models(self.model_class,
                                                                                          self.num_classes,
                                                                                          self.classify)
         # Scaling training set for Autoencoder
         one_hot_y = None
-        scaled_num_X = self.scaler.fit_transform(num_X)
+        for m, X_mod in enumerate(X):
+            self.scalers.append(MinMaxScaler())
+            index = [i for i in range(len(X_mod)) if i not in self.nominal_features_index[m]]
+            if len(index) > 0:
+                index = index[0]
+                X_mod[index] = self.scalers[-1].fit_transform(X_mod[index])
+        X = [[csr_matrix([v.toarray()[0] for v in feature]) if i in index else feature for i, feature in enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
+        X = [e for a in X for e in a]
         if self.classify:
             one_hot_y = self.label_encoder.fit_transform(y.reshape(-1, 1))
-        normal_losses_per_fold = []
-        times_per_fold = []
-        if len(reconstruction_models) > 1:
-            # Iterating over all the models to find the best
-            for index in range(len(reconstruction_models)):
-                print('\nStarting StratifiedKFold for %s\n' % models_names[index])
-                skf = StratifiedKFold(n_splits=self.k_internal_fold, shuffle=True)
-                normal_losses_per_fold.append([])
-                times_per_fold.append([])
-                f = 0
-                reconstruction_model = reconstruction_models[index]
-                classification_model = classification_models[index]
-                for train_index, validation_index in skf.split(
-                        np.zeros(shape=(
-                                num_X.shape[0], self.numerical_features_length + len(self.nominal_features_lengths))),
-                        y):
-                    # To reduce amount of similar models to built, we save initial weights at first fold, than we will use this for subsequent folds.
-                    if f == 0:
-                        reconstruction_model.save_weights(self.checkpoint_file)
-                    else:
-                        reconstruction_model.load_weights(self.checkpoint_file)
-                    f += 1
-                    print('\nFold %s\n' % f)
-                    # for _model in self._models:
-                    if not self.denoising:
-                        times_per_fold[-1].append(time.time())
-                        # Train Autoencoder
-                        train_history = \
-                            reconstruction_model.fit(
-                                [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
-                                                                  nom_X],
-                                [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
-                                                                  nom_X],
-                                epochs=self.epochs_number,
-                                batch_size=32,
-                                shuffle=True,
-                                verbose=2,
-                                # validation_split = 0.1,
-                                validation_data=(
-                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
-                                                                           nom_training in nom_X],
-                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
-                                                                           nom_training in nom_X]
-                                ),
-                                callbacks=[
-                                    EarlyStopping(monitor='val_loss', patience=self.patience, min_delta=self.min_delta),
-                                    CSVLogger(self.log_file)
-                                ]
-                            )
-                        if self.classify:
-                            for layer in reconstruction_model:
-                                layer.trainable = False
-                            train_history = \
-                                classification_model.fit(
-                                    [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
-                                                                      nom_X],
-                                    one_hot_y[train_index, :],
-                                    epochs=self.epochs_number,
-                                    batch_size=32,
-                                    shuffle=True,
-                                    verbose=2,
-                                    # validation_split = 0.1,
-                                    validation_data=(
-                                        [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
-                                                                               nom_training in nom_X],
-                                        one_hot_y[validation_index, :]
-                                    ),
-                                    callbacks=[
-                                        EarlyStopping(monitor='val_loss', patience=self.patience,
-                                                      min_delta=self.min_delta),
-                                        CSVLogger(self.log_file)
-                                    ]
-                                )
-                    else:
-                        noise_factor = .5
-                        noisy_scaled_num_X = scaled_num_X[train_index, :] + noise_factor * np.random.normal(loc=.0,
-                                                                                                            scale=1.,
-                                                                                                            size=scaled_num_X[
-                                                                                                                 train_index,
-                                                                                                                 :].shape)
-                        times_per_fold[-1].append(time.time())
-                        # Train Autoencoder
-                        train_history = \
-                            reconstruction_model.fit(
-                                [noisy_scaled_num_X] + [nom_training[train_index, :] for nom_training in nom_X],
-                                [scaled_num_X[train_index, :]] + [nom_training[train_index, :] for nom_training in
-                                                                  nom_X],
-                                epochs=self.epochs_number,
-                                batch_size=32,
-                                shuffle=True,
-                                verbose=2,
-                                # validation_split = 0.1,
-                                validation_data=(
-                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
-                                                                           nom_training in nom_X],
-                                    [scaled_num_X[validation_index, :]] + [nom_training[validation_index, :] for
-                                                                           nom_training in nom_X]
-                                ),
-                                callbacks=[
-                                    EarlyStopping(monitor='val_loss', patience=self.patience, min_delta=self.min_delta),
-                                    CSVLogger(self.log_file)
-                                ]
-                            )
-                    normal_losses_per_fold[-1].append(self.get_loss(train_history.history, 'val_loss'))
-                    times_per_fold[-1][-1] = time.time() - times_per_fold[-1][-1]
-                normal_losses_per_fold[-1] = np.asarray(normal_losses_per_fold[-1])
-                times_per_fold[-1] = np.asarray(times_per_fold[-1])
-            mean_normal_losses = np.mean(normal_losses_per_fold, axis=1)
-            std_normal_losses = np.std(normal_losses_per_fold, axis=1)
-            # We use the sum of mean and std deviation to choose the best model
-            meanPstd_normal_losses = mean_normal_losses + std_normal_losses
-            mean_times = np.mean(times_per_fold, axis=1)
-            # Saving losses per model
-            with open(self.losses_file, 'a') as f:
-                for mean_normal_loss, std_normal_loss, model_name in zip(mean_normal_losses, std_normal_losses,
-                                                                         models_names):
-                    f.write('%s %s %s\n' % (mean_normal_loss, std_normal_loss, model_name))
-            min_loss = np.min(meanPstd_normal_losses)
-            print(meanPstd_normal_losses)
-            best_model_index = list(meanPstd_normal_losses).index(min_loss)
-            best_model_name = models_names[best_model_index]
-            t = np.max(mean_times)
-            print(t)
-        else:
-            best_model_name = models_names[0]
+        best_model_name = models_names[0]
         t = 0
         reconstruction_models = None
         classification_models = None
         del reconstruction_models
         del classification_models
         gc.collect()
-        sharing_ray = int(best_model_name.split('_')[1])
-        grafting_depth = int(best_model_name.split('_')[2])
-        self.reconstruction_model_, _, self.classification_model_, _ = self.init_model(self.model_class, sharing_ray,
-                                                                                       grafting_depth, self.num_classes,
+        self.reconstruction_model_, _, self.classification_model_, _ = self.init_model(self.model_class,
+                                                                                       self.num_classes,
                                                                                        self.classify)
         train_history = None
-        if not self.denoising:
-            t = time.time() - t
-            if self.reconstruction_model_ is not None:
-                # Train Autoencoder
-                train_history = \
-                    self.reconstruction_model_.fit(
-                        [scaled_num_X] + nom_X,
-                        [scaled_num_X] + nom_X,
-                        epochs=self.epochs_number,
-                        batch_size=32,
-                        shuffle=True,
-                        verbose=2,
-                        callbacks=[
-                            EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
-                            CSVLogger(self.log_file)
-                        ]
-                    )
-                if self.classify:
-                    for layer in self.reconstruction_model_.layers:
-                        layer.trainable = False
-            if self.classify:
-                train_history = \
-                    self.classification_model_.fit(
-                        [scaled_num_X] + nom_X,
-                        one_hot_y,
-                        epochs=self.epochs_number,
-                        batch_size=32,
-                        shuffle=True,
-                        verbose=2,
-                        callbacks=[
-                            EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
-                            CSVLogger(self.log_file)
-                        ]
-                    )
-        # TODO: denoising training definition
-        else:
-            noise_factor = .5
-            noisy_scaled_num_X = scaled_num_X[train_index, :] + noise_factor * np.random.normal(loc=.0, scale=1.,
-                                                                                                size=scaled_num_X[
-                                                                                                     train_index,
-                                                                                                     :].shape)
-            t = time.time() - t
+        t = time.time() - t
+        if self.reconstruction_model_ is not None:
             # Train Autoencoder
             train_history = \
                 self.reconstruction_model_.fit(
-                    [noisy_scaled_num_X] + nom_X,
-                    [scaled_num_X] + nom_X,
+                    X, X,
                     epochs=self.epochs_number,
                     batch_size=32,
                     shuffle=True,
@@ -621,6 +464,20 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                         CSVLogger(self.log_file)
                     ]
                 )
+        if self.classify:
+            train_history = \
+                self.classification_model_.fit(
+                    X, one_hot_y,
+                    epochs=self.epochs_number,
+                    batch_size=32,
+                    shuffle=True,
+                    verbose=2,
+                    callbacks=[
+                        EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
+                        CSVLogger(self.log_file)
+                    ]
+                )
+
         self.normal_loss_ = self.get_loss(train_history.history, 'loss')
         t = time.time() - t
         if self.reconstruction_model_ is not None:
@@ -736,22 +593,139 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def init_model(self, model_class=None, sharing_ray=None, grafting_depth=None, num_classes=None, classify=None):
 
-        if None in [self.nominal_features_lengths, self.numerical_features_length,
-                    self.nominal_output_activation_functions, self.nominal_loss_functions]:
-            raise Exception('Cannot call init_models or init_model methods of SklearnSparkWrapper without setting\
-                nominal_features_lengths, numerical_features_length, nominal_output_activation_functions, and nominal_loss_functions\
-                attributes. If you want to automatically initialize them, use SklearnSparkWrapper fit method.')
-
         if model_class is None:
             model_class = self.model_class
-        if sharing_ray is None:
-            sharing_ray = self.sharing_ray
-        if grafting_depth is None:
-            grafting_depth = self.grafting_depth
         if num_classes is None:
             num_classes = self.num_classes
         if classify is None:
             classify = self.classify
+
+        reconstruction_model = None
+        compression_model = None
+        classification_model = None
+        model_name = model_class
+
+        reduction_coeff = None
+        multimodal_hidden_shape = None
+
+        activation_function = self.hidden_activation_function
+        if not self.classify:
+            reduction_coeff = self.compression_ratio ** (1 / self.half_depth)
+        else:
+            multimodal_hidden_shape = [int(np.ceil(np.sum(feature_lengths) / 10) * 10) for feature_lengths in
+                                       self.multimodal_feature_lengths]
+
+        if model_class == 'km2ae':
+            multimodal_encodeds = []
+            multimodal_encoded = None
+            multimodal_decodeds = []
+
+            multimodal_input_datas = [Input(shape=(length,)) for lengths in self.multimodal_feature_lengths for length
+                                      in lengths]
+            multimodal_indexes = [(0, len(self.multimodal_feature_lengths[0]))]
+            for i in range(1, self.num_modality):
+                multimodal_indexes.append(
+                    (multimodal_indexes[-1][1], multimodal_indexes[-1][1] + len(self.multimodal_feature_lengths[i])))
+
+            multimodal_dims = []
+
+            concats = []
+            for index in multimodal_indexes:
+                multimodal_input_data = multimodal_input_datas[index[0]:index[1]]
+                if len(multimodal_input_data) > 1:
+                    concats.append(concatenate(multimodal_input_data))
+                else:
+                    concats.append(multimodal_input_data[0])
+
+            # Encoder
+            for concat in concats:
+                x = concat
+                multimodal_dims.append([])
+                for _ in range(self.half_depth - 1):
+                    input_shape = x._keras_shape[1]
+                    multimodal_dims[-1].append(input_shape)
+                    output_shape = int(np.ceil(input_shape * reduction_coeff))
+                    x = Dense(output_shape, activation=activation_function)(x)
+                multimodal_encodeds.append(x)
+            # Common encoding layer
+            xs = concatenate(multimodal_encodeds)
+            input_shape = xs._keras_shape[1]
+            multimodal_dims[-1].append(input_shape)
+            output_shape = int(np.ceil(input_shape * reduction_coeff))
+            multimodal_encoded = Dense(output_shape, activation=activation_function)(xs)
+            # Decoder
+            for i in range(self.num_modality):
+                x = multimodal_encoded
+                for j in reversed(range(self.depth - self.half_depth)):
+                    output_shape = multimodal_dims[i][j]
+                    x = Dense(output_shape, activation=activation_function)(x)
+                # Output
+                multimodal_decodeds += [Dense(length, activation=activation)(x) for length, activation in
+                                        zip(self.multimodal_feature_lengths[i], self.multimodal_output_functions[i])]
+
+            reconstruction_model = Model(multimodal_input_datas, multimodal_decodeds)
+            plot_model(reconstruction_model,
+                       to_file=self.plot_file + '_reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.png',
+                       show_shapes=True, show_layer_names=True)
+            with open(self.summary_file + '_reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.dat',
+                      'w') as f:
+                reconstruction_model.summary(print_fn=lambda x: f.write(x + '\n'))
+            reconstruction_model.compile(optimizer=Adadelta(lr=1.),
+                                         loss=self.multimodal_loss_functions)
+            compression_model = Model(multimodal_input_datas, multimodal_encoded)
+
+            return reconstruction_model, compression_model, classification_model, model_name
+
+        if model_class == 'km2nn':
+            multimodal_encodeds = []
+
+            multimodal_input_datas = [Input(shape=(length,)) for lengths in self.multimodal_feature_lengths for length
+                                      in lengths]
+            multimodal_indexes = [(0, len(self.multimodal_feature_lengths[0]))]
+            for i in range(1, self.num_modality):
+                multimodal_indexes.append(
+                    (multimodal_indexes[-1][1], multimodal_indexes[-1][1] + len(self.multimodal_feature_lengths[i])))
+
+            concats = []
+            for index in multimodal_indexes:
+                multimodal_input_data = multimodal_input_datas[index[0]:index[1]]
+                if len(multimodal_input_data) > 1:
+                    concats.append(concatenate(multimodal_input_data))
+                else:
+                    concats.append(multimodal_input_data[0])
+
+            # MLP
+            for i, concat in enumerate(concats):
+                x = concat
+                for _ in range(self.depth - 1):
+                    x = Dense(multimodal_hidden_shape[i], activation=activation_function)(x)
+                multimodal_encodeds.append(x)
+            # Common final layer
+            xs = concatenate(multimodal_encodeds)
+            multimodal_encoded = Dense(np.sum(multimodal_hidden_shape), activation=activation_function)(xs)
+            x = Dropout(.3)(multimodal_encoded)
+            multimodal_output = Dense(num_classes, activation='softmax', name='clf_out')(x)
+
+            classification_model = Model(multimodal_input_datas, multimodal_output)
+            plot_model(classification_model,
+                       to_file=self.plot_file + '_classification.png', show_shapes=True, show_layer_names=True)
+            with open(self.summary_file + '_classification.dat', 'w') as f:
+                classification_model.summary(print_fn=lambda x: f.write(x + '\n'))
+            classification_model.compile(optimizer=Adadelta(lr=1.),
+                                         loss='categorical_crossentropy')
+
+            return reconstruction_model, compression_model, classification_model, model_name
+
+        if None in [self.nominal_features_lengths, self.numerical_features_length,
+                    self.nominal_output_activation_functions, self.nominal_loss_functions]:
+            raise Exception('Cannot call init_models or init_model methods of SklearnSparkWrapper without setting\
+                    nominal_features_lengths, numerical_features_length, nominal_output_activation_functions, and nominal_loss_functions\
+                    attributes. If you want to automatically initialize them, use SklearnSparkWrapper fit method.')
+
+        if sharing_ray is None:
+            sharing_ray = self.sharing_ray
+        if grafting_depth is None:
+            grafting_depth = self.grafting_depth
 
         reduction_coeff = self.compression_ratio ** (1 / self.half_depth)
         adj_factor = 0
@@ -774,9 +748,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         num_hidden_activation_function = self.hidden_activation_function
         nom_hidden_activation_function = self.hidden_activation_function
         hyb_activation_function = self.hidden_activation_function
-        reconstruction_model = None
-        compression_model = None
-        classification_model = None
         model_name = '%s_%s_%s' % (model_class, sharing_ray, grafting_depth)
         # Defining input tensors, one for numerical and one for each categorical
         input_datas = []
@@ -797,9 +768,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     x = compression_model.output
                 reconstruction_models.append(reconstruction_model)
                 compression_models.append(compression_model)
-
         if model_class == 'kdae' or model_class == 'kc2dae':
-
             if sharing_ray < 0 or sharing_ray > self.half_depth or grafting_depth < 0 or grafting_depth > self.half_depth:
                 print('Inserted sharing ray or grafting depth are invalid.')
                 exit(1)
@@ -1214,6 +1183,12 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         return reconstruction_model, compression_model, classification_model, model_name
 
     def predict(self, X, y=None):
+        if not self.multimodal:
+            return self.nom_num_predict(X)
+        else:
+            return self.mulmo_predict(X)
+
+    def nom_num_predict(self, X):
         nom_X, num_X = self.split_nom_num_features(X)
         scaled_num_X = self.scaler.transform(num_X)
         t = 0
@@ -1238,6 +1213,52 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 losses.append(K.eval(globals()[nominal_loss_function](nts.toarray(), K.constant(rnts))))
             # first losses refers to numerical features, so we weighted them
             loss = np.dot(np.array(losses).T, [self.numerical_weight] + self.nominal_weights)
+            pred = np.asarray([
+                -1 if l > self.normal_loss_
+                else 1 for l in loss
+            ])
+            self.proba = np.asarray(loss)
+            self.proba = np.reshape(self.proba, self.proba.shape[0])
+        pred = np.reshape(pred, pred.shape[0])
+        t = time.time() - t
+        self.te_ = t
+        return pred
+
+    def mulmo_predict(self, X):
+
+        for m, X_mod in enumerate(X):
+            index = [i for i in range(len(X_mod)) if i not in self.nominal_features_index[m]]
+            if len(index) > 0:
+                index = index[0]
+                X_mod[index] = self.scalers[m].transform(X_mod[index])
+        X = [[csr_matrix([v.toarray()[0] for v in feature]) if i in index else feature for i, feature in
+              enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
+        X = [e for a in X for e in a]
+
+        t = 0
+        t = time.time() - t
+        if self.classify:
+            pred = self.classification_model_.predict(X)
+            self.proba = copy(pred)
+            for i, sp in enumerate(pred):
+                sp_max = np.max(sp)
+                n_max = len(pred[pred == sp_max])
+                pred[i] = [1 if p == sp_max else 0 for p in sp]
+                indexes = np.where(sp == 1)[0]
+                if len(indexes) > 1:
+                    rand_sp = np.random.choice(indexes)
+                    pred[i] = [1 if j == rand_sp else 0 for j in range(len(sp))]
+            pred = self.label_encoder.inverse_transform(pred)
+        else:
+            reconstr_X = self.reconstruction_model_.predict(X)
+            losses = []
+            for nts, rnts, multimodal_loss_function in zip(X, reconstr_X, self.multimodal_loss_functions):
+                if issparse(nts):
+                    losses.append(K.eval(globals()[multimodal_loss_function](nts.toarray(), K.constant(rnts))))
+                else:
+                    losses.append(K.eval(globals()[multimodal_loss_function](nts, K.constant(rnts))))
+            # first losses refers to numerical features, so we weighted them
+            loss = np.dot(np.array(losses).T, self.multimodal_weights)
             pred = np.asarray([
                 -1 if l > self.normal_loss_
                 else 1 for l in loss

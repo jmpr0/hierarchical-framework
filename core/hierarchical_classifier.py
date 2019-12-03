@@ -419,23 +419,24 @@ class HierarchicalClassifier(object):
             self.features = data[:, :self.dataset_features_number]
             self.labels = data[:, self.dataset_features_number:]
 
-            modalities = None
+            self.modalities = None
             # Preprocessing
             if self.detector_class == 'mlo':
                 mode = core.utils.preprocessing.MLO
             elif self.multimodal:
-                modalities = [x[2][self.multimodal_index] for x in dataset['attributes'][:self.dataset_features_number]]
+                self.modalities = [x[self.multimodal_index+1] for x in dataset['attributes'][:self.dataset_features_number]]
                 mode = core.utils.preprocessing.MULMO
             else:
                 mode = core.utils.preprocessing.CUSTOM
                 if not self.deep:
                     mode += '-' + core.utils.preprocessing.FLATTEN
             self.features = core.utils.preprocessing.preprocess_dataset(self.features, self.nominal_features_index,
-                                                                        mode=mode, modalities=modalities)
+                                                                        mode=mode, modalities=self.modalities)
 
-            # After dataset preprocessing, we could update information about dimensions
-            self.attributes_number = self.features.shape[1] + self.levels_number
-            self.dataset_features_number = self.features.shape[1]
+            if not self.multimodal:
+                # After dataset preprocessing, we could update information about dimensions
+                self.attributes_number = self.features.shape[1] + self.levels_number
+                self.dataset_features_number = self.features.shape[1]
 
             if self.anomaly and len(self.anomaly_classes) > 0:
                 self.anomaly_class = apply_anomalies(self.labels, self.level_target, self.anomaly_classes)
@@ -587,7 +588,7 @@ class HierarchicalClassifier(object):
         # Testing set of each fold are not overlapping, we use only one array to maintain all the predictions over the folds
         self.predictions = np.ndarray(shape=self.labels.shape, dtype=object)
 
-        for fold_cnt, (train_index, test_index) in enumerate(skf.split(self.features, self.labels[:, -1])):
+        for fold_cnt, (train_index, test_index) in enumerate(skf.split(np.zeros(shape=self.labels.shape), self.labels[:, -1])):
 
             if fold_cnt < starting_fold or fold_cnt > ending_fold - 1:
                 continue
@@ -700,14 +701,14 @@ class HierarchicalClassifier(object):
             time.sleep(1)
             print('')
 
-            for node in nodes:
-                try:
-                    pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.pickle' %
-                            (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
-                except:
-                    serialization.write('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.model' %
-                            (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),
-                            node.model_wrapper.model_)
+        for node in nodes:
+            try:
+                pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.pickle' %
+                    (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
+            except:
+                serialization.write('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.model' %
+                    (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),
+                    node.model_wrapper.model_)
         # MEAN WEIGHT MODEL
         # if self.anomaly and self.deep:
 
@@ -853,13 +854,14 @@ class HierarchicalClassifier(object):
     def Keras_Classifier(self, node):
         # Instantation
         model = SklearnKerasWrapper(*node.classifier_opts, model_class=node.classifier_class,
-                                         epochs_number=self.epochs_number,
-                                         num_classes=node.children_number,
-                                         nominal_features_index=self.nominal_features_index,
-                                         fine_nominal_features_index=self.fine_nominal_features_index,
-                                         numerical_features_index=self.numerical_features_index, level=node.level,
-                                         fold=node.fold, classify=True,
-                                         weight_features=self.weight_features, arbitrary_discr=self.arbitrary_discr)
+                                    epochs_number=self.epochs_number,
+                                    num_classes=node.children_number,
+                                    nominal_features_index=self.nominal_features_index,
+                                    fine_nominal_features_index=self.fine_nominal_features_index,
+                                    numerical_features_index=self.numerical_features_index, level=node.level,
+                                    fold=node.fold, classify=True,
+                                    weight_features=self.weight_features, arbitrary_discr=self.arbitrary_discr,
+                                    modalities=self.modalities)
         return model
 
     def Keras_StackedDeepAutoencoderClassifier(self, node):
@@ -871,13 +873,16 @@ class HierarchicalClassifier(object):
     def Keras_Convolutional2DAutoencoder(self, node):
         return self.Keras_Classifier(node)
 
+    def Keras_MultimodalNeuralNetwork(self, node):
+        return self.Keras_Classifier(node)
+
     def _AnomalyDetector(self, node):
         # Instantation
         model = AnomalyDetector(node.detector_class, node.detector_opts,
                                 node.label_encoder.transform([self.anomaly_class])[0], node.features_number,
                                 self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize,
                                 self.weight_features, self.workers_number, self.unsupervised, self.arbitrary_discr,
-                                self.multimodal)
+                                self.modalities)
         return model
 
     def Spark_Classifier(self, node):
@@ -952,10 +957,15 @@ class HierarchicalClassifier(object):
                 node.features_number,
                 self.dataset_features_number
             )
-        node.model_wrapper.fit(
-            self.features[node.train_index][:, node.features_index],
-            node.label_encoder.transform(self.labels[node.train_index, node.level])
-        )
+            node.model_wrapper.fit(
+                self.features[node.train_index][:, node.features_index],
+                node.label_encoder.transform(self.labels[node.train_index, node.level])
+            )
+        else:
+            node.model_wrapper.fit(
+                [[f[node.train_index] for f in fs] for fs in self.features],
+                node.label_encoder.transform(self.labels[node.train_index, node.level])
+            )
         node.training_duration = node.model_wrapper.tr_
         print(
             'Training %s_%s duration [s]: %s                                                                                  '
@@ -965,17 +975,26 @@ class HierarchicalClassifier(object):
         self.write_time(node.training_duration, node.level, node.tag, arbitrary_discr='training')
 
     def test(self, node):
-        if len(node.test_index) == 0:
-            return
         node.model_wrapper.set_oracle(
             node.label_encoder.transform(self.labels[node.test_index, node.level])
         )
-        pred = node.label_encoder.inverse_transform(
-            node.model_wrapper.predict(self.features[node.test_index][:, node.features_index]))
-        try:
-            proba = node.model_wrapper.predict_proba(self.features[node.test_index][:, node.features_index])
-        except:
-            proba = node.model_wrapper.score(self.features[node.test_index][:, node.features_index])
+        if len(node.test_index) == 0:
+            return
+        if not self.multimodal:
+            pred = node.label_encoder.inverse_transform(
+                node.model_wrapper.predict(self.features[node.test_index][:, node.features_index]))
+            try:
+                proba = node.model_wrapper.predict_proba(self.features[node.test_index][:, node.features_index])
+            except:
+                proba = node.model_wrapper.score(self.features[node.test_index][:, node.features_index])
+        else:
+            pred = node.label_encoder.inverse_transform(
+                node.model_wrapper.predict([[f[node.test_index] for f in fs] for fs in self.features])
+            )
+            try:
+                proba = node.model_wrapper.predict_proba([[f[node.test_index] for f in fs] for fs in self.features])
+            except:
+                proba = node.model_wrapper.score([[f[node.test_index] for f in fs] for fs in self.features])
         for p, b, i in zip(pred, proba, node.test_index):
             self.predictions[i, node.level] = p
         node.testing_duration = node.model_wrapper.te_
@@ -992,12 +1011,21 @@ class HierarchicalClassifier(object):
         node.model_wrapper.set_oracle(
             node.label_encoder.transform(self.labels[node.test_index_all, node.level])
         )
-        pred = node.label_encoder.inverse_transform(
-            node.model_wrapper.predict(self.features[node.test_index_all][:, node.features_index]))
-        try:
-            proba = node.model_wrapper.predict_proba(self.features[node.test_index_all][:, node.features_index])
-        except:
-            proba = node.model_wrapper.score(self.features[node.test_index_all][:, node.features_index])
+        if not self.multimodal:
+            pred = node.label_encoder.inverse_transform(
+                node.model_wrapper.predict(self.features[node.test_index_all][:, node.features_index]))
+            try:
+                proba = node.model_wrapper.predict_proba(self.features[node.test_index_all][:, node.features_index])
+            except:
+                proba = node.model_wrapper.score(self.features[node.test_index_all][:, node.features_index])
+        else:
+            pred = node.label_encoder.inverse_transform(
+                node.model_wrapper.predict([[f[node.test_index_all] for f in fs] for fs in self.features])
+            )
+            try:
+                proba = node.model_wrapper.predict_proba([[f[node.test_index_all] for f in fs] for fs in self.features])
+            except:
+                proba = node.model_wrapper.score([[f[node.test_index_all] for f in fs] for fs in self.features])
 
         node.testing_all_duration = node.model_wrapper.te_
         print(

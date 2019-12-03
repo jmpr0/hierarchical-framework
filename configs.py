@@ -13,6 +13,7 @@ supported_classifiers = {
     'wsl': 'Weka_SuperLearner',
     'kdae': 'Keras_StackedDeepAutoencoderClassifier',
     'kmlp': 'Keras_MultiLayerPerceptronClassifier',
+    'km2nn': 'Keras_MultimodalNeuralNetwork',
     'dkdae': 'Spark_Keras_StackedDeepAutoencoderClassifier',
     'dkmlp': 'Spark_Keras_MultiLayerPerceptronClassifier'
 }
@@ -29,5 +30,6 @@ supported_detectors = {
     'ksae': 'Keras_StackedAutoencoder',
     'kdae': 'Keras_DeepAutoencoder',
     'kc2dae': 'Keras_Convolutional2DAutoencoder',
-    'mlo' : 'MixtureLocalizationOutlier'
+    'mlo' : 'MixtureLocalizationOutlier',
+    'km2ae': 'Keras_MultimodalAutoencoder'
 }
