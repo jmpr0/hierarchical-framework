@@ -151,7 +151,6 @@ def feature_selection(X, y, features_number, dataset_features_number):
 
 
 def multimodal_split(X, modalities):
-    n_samples = X.shape[0]
     modalities = OrdinalEncoder().fit_transform(np.asarray(modalities).reshape(-1, 1))
     unique_modalities, mod_counts = np.unique(modalities, return_counts=True)
     X_mulmo = np.empty(len(unique_modalities), dtype=object)
@@ -179,4 +178,9 @@ def multimodal_split(X, modalities):
                 except np.AxisError:
                     X_mulmo_joined[-1][num_index] = np.concatenate(
                         (X_mulmo_joined[-1][num_index].reshape(-1, 1), feature.reshape(-1, 1)), axis=1)
-    return np.asarray(X_mulmo_joined)
+    try:
+        return np.asarray(X_mulmo_joined)
+    except ValueError:
+        # When we have one modality (single modality) we have got an array with one array (modality) that contains sparse arrays
+        # and a single numerical matrix. np.asarray remove useless levels [[a,b]] -> [a,b], causing error.
+        return np.asarray(X_mulmo_joined + [[]])[:-1]

@@ -876,6 +876,9 @@ class HierarchicalClassifier(object):
     def Keras_MultimodalNeuralNetwork(self, node):
         return self.Keras_Classifier(node)
 
+    def Keras_ResidualMultimodalNeuralNetwork(self, node):
+        return self.Keras_Classifier(node)
+
     def _AnomalyDetector(self, node):
         # Instantation
         model = AnomalyDetector(node.detector_class, node.detector_opts,

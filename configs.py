@@ -14,6 +14,7 @@ supported_classifiers = {
     'kdae': 'Keras_StackedDeepAutoencoderClassifier',
     'kmlp': 'Keras_MultiLayerPerceptronClassifier',
     'km2nn': 'Keras_MultimodalNeuralNetwork',
+    'kresm2nn': 'Keras_ResidualMultimodalNeuralNetwork',
     'dkdae': 'Spark_Keras_StackedDeepAutoencoderClassifier',
     'dkmlp': 'Spark_Keras_MultiLayerPerceptronClassifier'
 }
@@ -31,5 +32,6 @@ supported_detectors = {
     'kdae': 'Keras_DeepAutoencoder',
     'kc2dae': 'Keras_Convolutional2DAutoencoder',
     'mlo' : 'MixtureLocalizationOutlier',
-    'km2ae': 'Keras_MultimodalAutoencoder'
+    'km2ae': 'Keras_MultimodalAutoencoder',
+    'kbim2ae': 'Keras_BinaryMultimodalAutoencoder'
 }

@@ -17,6 +17,8 @@ from keras.layers import Dense
 from keras.layers import Input
 from keras.layers import Conv2D
 from keras.layers import Dropout
+from keras.layers import Add
+from keras.layers import ReLU
 from keras.callbacks import EarlyStopping
 from keras.callbacks import CSVLogger
 from keras import backend as K
@@ -30,6 +32,7 @@ from keras.activations import tanh
 from keras.losses import mean_squared_error
 from keras.losses import categorical_crossentropy
 from keras.losses import binary_crossentropy
+from keras.losses import squared_hinge
 
 # For reproducibility
 from tensorflow import set_random_seed, logging
@@ -40,23 +43,36 @@ logging.set_verbosity(logging.ERROR)
 eps = 1e-2
 
 
+def ResidualDense(output_dim, activation='relu', internal_depth=1, name='residual_dense'):
+    def inside(x):
+        internal_x = x
+        # for i in range(internal_depth - 1):
+        #     internal_x = Dense(output_dim, activation=activation, name='%s_%s' % (name, i))(internal_x)
+        # internal_x = Dense(output_dim, activation='linear', name='%s_%s' % (name, internal_depth - 1))(internal_x)
+        for i in range(internal_depth - 1):
+            internal_x = Dense(output_dim, activation=activation)(internal_x)
+        internal_x = Dense(output_dim, activation='linear')(internal_x)
+        x = Add()([x, internal_x])
+        x = ReLU()(x)
+        return x
+    return inside
+
+
 class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def __init__(self, depth='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1',
-                 sharing_ray='0',
-                 grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
+                 sharing_ray='0', grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
                  level=0, classify=False, weight_features=False, arbitrary_discr='', modalities=None):
+
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
-             [depth, hidden_activation_function_name, mode, compression_ratio, sharing_ray, grafting_depth]]
+             [depth, hidden_activation_function_name, mode]]
         )
-
-        if model_class == 'kmlp':
-            model_discr = model_class + '_' + '_'.join(
-                [str(c) for c in
-                 [depth, hidden_activation_function_name, mode]]
-            )
+        if model_class in ['km2ae', 'kdae', 'km2nn', 'kresm2nn']:
+            model_discr += '_%s' % compression_ratio
+        if model_class == 'kdae':
+            model_discr += '_%s_%s' % (sharing_ray, grafting_depth)
 
         self.sharing_ray = int(sharing_ray)
         self.grafting_depth = int(grafting_depth)
@@ -407,7 +423,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             modality, index in
             zip(X, self.nominal_features_index)]
         self.multimodal_loss_functions = [
-            ['categorical_crossentropy' if j in index else 'mean_squared_error' for j, feature in enumerate(modality)] for
+            ['categorical_crossentropy' if j in index else 'mean_squared_error' for j, feature in enumerate(modality)]
+            for
             modality, index in
             zip(X, self.nominal_features_index)]
         self.multimodal_loss_functions = [e for a in self.multimodal_loss_functions for e in a]
@@ -434,7 +451,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             if len(index) > 0:
                 index = index[0]
                 X_mod[index] = self.scalers[-1].fit_transform(X_mod[index])
-        X = [[csr_matrix([v.toarray()[0] for v in feature]) if i in index else feature for i, feature in enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
+        X = [[csr_matrix([v.toarray()[0] for v in feature]) if i in index else feature for i, feature in
+              enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
         X = [e for a in X for e in a]
         if self.classify:
             one_hot_y = self.label_encoder.fit_transform(y.reshape(-1, 1))
@@ -448,6 +466,19 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.reconstruction_model_, _, self.classification_model_, _ = self.init_model(self.model_class,
                                                                                        self.num_classes,
                                                                                        self.classify)
+        callbacks = [EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
+                     CSVLogger(self.log_file)]
+        if self.lr_scheduler is not None:
+            callbacks = [self.lr_scheduler]
+            self.binarized = True
+        else:
+            self.binarized = False
+
+        if self.binarized:
+            n_scalers = len(X)
+            self.binary_scalers = [MinMaxScaler((-1, 1)) for _ in range(n_scalers)]
+            X = [self.binary_scalers[i].fit_transform(feature) if not issparse(feature) else self.binary_scalers[
+                i].fit_transform(feature.toarray()) for i, feature in enumerate(X)]
         train_history = None
         t = time.time() - t
         if self.reconstruction_model_ is not None:
@@ -459,10 +490,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     batch_size=32,
                     shuffle=True,
                     verbose=2,
-                    callbacks=[
-                        EarlyStopping(monitor='loss', patience=self.patience, min_delta=self.min_delta),
-                        CSVLogger(self.log_file)
-                    ]
+                    callbacks=callbacks
                 )
         if self.classify:
             train_history = \
@@ -600,6 +628,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         if classify is None:
             classify = self.classify
 
+        self.lr_scheduler = None
+
         reconstruction_model = None
         compression_model = None
         classification_model = None
@@ -617,7 +647,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
         if model_class == 'km2ae':
             multimodal_encodeds = []
-            multimodal_encoded = None
             multimodal_decodeds = []
 
             multimodal_input_datas = [Input(shape=(length,)) for lengths in self.multimodal_feature_lengths for length
@@ -648,7 +677,10 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     x = Dense(output_shape, activation=activation_function)(x)
                 multimodal_encodeds.append(x)
             # Common encoding layer
-            xs = concatenate(multimodal_encodeds)
+            if len(multimodal_encodeds) > 1:
+                xs = concatenate(multimodal_encodeds)
+            else:
+                xs = multimodal_encodeds[0]
             input_shape = xs._keras_shape[1]
             multimodal_dims[-1].append(input_shape)
             output_shape = int(np.ceil(input_shape * reduction_coeff))
@@ -665,9 +697,9 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
             reconstruction_model = Model(multimodal_input_datas, multimodal_decodeds)
             plot_model(reconstruction_model,
-                       to_file=self.plot_file + '_reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.png',
+                       to_file=self.plot_file + '_reconstruction.png',
                        show_shapes=True, show_layer_names=True)
-            with open(self.summary_file + '_reconstruction_jr%s_il%s' % (sharing_ray, grafting_depth) + '.dat',
+            with open(self.summary_file + '_reconstruction.dat',
                       'w') as f:
                 reconstruction_model.summary(print_fn=lambda x: f.write(x + '\n'))
             reconstruction_model.compile(optimizer=Adadelta(lr=1.),
@@ -676,7 +708,94 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
             return reconstruction_model, compression_model, classification_model, model_name
 
-        if model_class == 'km2nn':
+        if model_class == 'kbim2ae':
+            # Ref: https://github.com/DingKe/nn_playground/blob/master/binarynet/mnist_mlp.py
+            from extdev import binary_layers, binary_ops
+            from keras.optimizers import Adam
+            from keras.callbacks import LearningRateScheduler
+            binary_tanh = binary_ops.binary_tanh
+            BinaryDense = binary_layers.BinaryDense
+
+            H = 'Glorot'
+            kernel_lr_multiplier = 'Glorot'
+
+            # learning rate schedule
+            lr_start = 1e-3
+            lr_end = 1e-4
+            lr_decay = (lr_end / lr_start) ** (1. / self.epochs_number)
+            self.lr_scheduler = LearningRateScheduler(lambda e: lr_start * lr_decay ** e)
+
+            multimodal_encodeds = []
+            multimodal_decodeds = []
+
+            multimodal_input_datas = [Input(shape=(length,)) for lengths in self.multimodal_feature_lengths for length
+                                      in lengths]
+            multimodal_indexes = [(0, len(self.multimodal_feature_lengths[0]))]
+            for i in range(1, self.num_modality):
+                multimodal_indexes.append(
+                    (multimodal_indexes[-1][1], multimodal_indexes[-1][1] + len(self.multimodal_feature_lengths[i])))
+
+            multimodal_dims = []
+
+            concats = []
+            for index in multimodal_indexes:
+                multimodal_input_data = multimodal_input_datas[index[0]:index[1]]
+                if len(multimodal_input_data) > 1:
+                    concats.append(concatenate(multimodal_input_data))
+                else:
+                    concats.append(multimodal_input_data[0])
+
+            # Encoder
+            for concat in concats:
+                x = concat
+                multimodal_dims.append([])
+                for _ in range(self.half_depth - 1):
+                    input_shape = x._keras_shape[1]
+                    multimodal_dims[-1].append(input_shape)
+                    output_shape = int(np.ceil(input_shape * reduction_coeff))
+                    x = BinaryDense(output_shape, H=H, kernel_lr_multiplier=kernel_lr_multiplier, use_bias=False,
+                                    activation=binary_tanh)(x)
+                multimodal_encodeds.append(x)
+            # Common encoding layer
+            xs = concatenate(multimodal_encodeds)
+            input_shape = xs._keras_shape[1]
+            multimodal_dims[-1].append(input_shape)
+            output_shape = int(np.ceil(input_shape * reduction_coeff))
+            multimodal_encoded = BinaryDense(output_shape, H=H, kernel_lr_multiplier=kernel_lr_multiplier,
+                                             use_bias=False, activation=binary_tanh)(xs)
+            # Decoder
+            for i in range(self.num_modality):
+                x = multimodal_encoded
+                for j in reversed(range(self.depth - self.half_depth)):
+                    output_shape = multimodal_dims[i][j]
+                    x = BinaryDense(output_shape, H=H, kernel_lr_multiplier=kernel_lr_multiplier, use_bias=False,
+                                    activation=binary_tanh)(x)
+                # Output
+                multimodal_decodeds += [
+                    BinaryDense(length, H=H, kernel_lr_multiplier=kernel_lr_multiplier, use_bias=False,
+                                activation=binary_tanh)(x) for length, activation in
+                    zip(self.multimodal_feature_lengths[i], self.multimodal_output_functions[i])]
+
+            reconstruction_model = Model(multimodal_input_datas, multimodal_decodeds)
+            plot_model(reconstruction_model,
+                       to_file=self.plot_file + '_reconstruction.png',
+                       show_shapes=True, show_layer_names=True)
+            with open(self.summary_file + '_reconstruction.dat',
+                      'w') as f:
+                reconstruction_model.summary(print_fn=lambda x: f.write(x + '\n'))
+            reconstruction_model.compile(optimizer=Adam(lr=lr_start), loss='squared_hinge')
+            compression_model = Model(multimodal_input_datas, multimodal_encoded)
+
+            return reconstruction_model, compression_model, classification_model, model_name
+
+        if model_class == 'km2nn' or model_class == 'kresm2nn':
+
+            hidden_layer = Dense
+            if 'res' in model_class:
+                hidden_layer = ResidualDense
+                multimodal_hidden_shape = [int(np.sum(feature_lengths)) for feature_lengths in
+                                           self.multimodal_feature_lengths]
+
             multimodal_encodeds = []
 
             multimodal_input_datas = [Input(shape=(length,)) for lengths in self.multimodal_feature_lengths for length
@@ -698,11 +817,14 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             for i, concat in enumerate(concats):
                 x = concat
                 for _ in range(self.depth - 1):
-                    x = Dense(multimodal_hidden_shape[i], activation=activation_function)(x)
+                    x = hidden_layer(multimodal_hidden_shape[i], activation=activation_function)(x)
                 multimodal_encodeds.append(x)
             # Common final layer
-            xs = concatenate(multimodal_encodeds)
-            multimodal_encoded = Dense(np.sum(multimodal_hidden_shape), activation=activation_function)(xs)
+            if len(multimodal_encodeds) > 1:
+                xs = concatenate(multimodal_encodeds)
+            else:
+                xs = multimodal_encodeds[0]
+            multimodal_encoded = hidden_layer(np.sum(multimodal_hidden_shape), activation=activation_function)(xs)
             x = Dropout(.3)(multimodal_encoded)
             multimodal_output = Dense(num_classes, activation='softmax', name='clf_out')(x)
 
@@ -1235,6 +1357,10 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
               enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
         X = [e for a in X for e in a]
 
+        if self.binarized:
+            X = [self.binary_scalers[i].fit_transform(feature) if not issparse(feature) else self.binary_scalers[
+                i].fit_transform(feature.toarray()) for i, feature in enumerate(X)]
+
         t = 0
         t = time.time() - t
         if self.classify:
@@ -1253,7 +1379,9 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             reconstr_X = self.reconstruction_model_.predict(X)
             losses = []
             for nts, rnts, multimodal_loss_function in zip(X, reconstr_X, self.multimodal_loss_functions):
-                if issparse(nts):
+                if self.binarized:
+                    losses.append(K.eval(globals()['squared_hinge'](nts, K.constant(rnts))))
+                elif issparse(nts):
                     losses.append(K.eval(globals()[multimodal_loss_function](nts.toarray(), K.constant(rnts))))
                 else:
                     losses.append(K.eval(globals()[multimodal_loss_function](nts, K.constant(rnts))))
