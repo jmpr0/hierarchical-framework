@@ -37,7 +37,7 @@ class Sklearn_GridSearchCV(GridSearchCV):
 
 class Custom_GeneticAlgorithm(object):
     def __init__(self, estimator, param_grid, generations=50, population_size=20, min_delta=1e-4, mutation_proba=.1,
-                 n_jobs=None, verbose=1):
+                 n_jobs=None, verbose=1, common_param=dict()):
         random.seed(0)
         self.estimator = estimator
         self.generations = generations
@@ -49,6 +49,7 @@ class Custom_GeneticAlgorithm(object):
         self.mutation_proba = mutation_proba
         self.n_jobs = None
         self.verbose = verbose
+        self.common_param = common_param
 
         self.parents_n = math.ceil(population_size * .25)
         print('parents_n', self.parents_n)
@@ -141,6 +142,7 @@ class Custom_GeneticAlgorithm(object):
                     break
 
     def fitness_function(self, attributes, X, y):
+        attributes.update(self.common_param)
         # return random.random()
         if str(attributes) in self.memoized_score_estimators_dict:
             return self.memoized_score_estimators_dict[str(attributes)]

@@ -36,13 +36,18 @@ from keras.losses import categorical_crossentropy
 from keras.losses import binary_crossentropy
 from keras.losses import squared_hinge
 
+# Ref: https://github.com/DingKe/nn_playground/blob/master/binarynet/mnist_mlp.py
+from extdev import binary_layers, binary_ops
+from keras.optimizers import Adam
+from keras.callbacks import LearningRateScheduler
+
 # For reproducibility
 from tensorflow import set_random_seed, logging
 
 set_random_seed(0)
 logging.set_verbosity(logging.ERROR)
 
-eps = 1e-2
+eps = 1e-6
 
 
 def ResidualDense(output_dim, activation='relu', internal_depth=1, name='residual_dense'):
@@ -66,7 +71,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, n_hidden_layers='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1',
                  sharing_ray='0', grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
-                 level=0, classify=False, weight_features=False, arbitrary_discr='', modalities=None, embedding=False):
+                 level=0, classify=False, weight_features=False, arbitrary_discr='', modalities=None, embedding=False,
+                 patience=1, min_delta=1e-6, optimizer='adadelta', dropout_ratio=.1, neurons_ratio=1.):
 
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
@@ -94,8 +100,10 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.fold = fold
         self.level = level
         self.epochs_number = epochs_number
-        self.patience = 1
-        self.min_delta = 1e-6
+        self.patience = patience
+        self.min_delta = min_delta
+        self.optimizer = optimizer
+        self.dropout_ratio = dropout_ratio
         if 'n' not in mode:
             if 'v' in mode:
                 self.variational = True
@@ -714,10 +722,6 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             return reconstruction_model, compression_model, classification_model, model_name
 
         if model_class == 'kbim2ae':
-            # Ref: https://github.com/DingKe/nn_playground/blob/master/binarynet/mnist_mlp.py
-            from extdev import binary_layers, binary_ops
-            from keras.optimizers import Adam
-            from keras.callbacks import LearningRateScheduler
             binary_tanh = binary_ops.binary_tanh
             BinaryDense = binary_layers.BinaryDense
 
@@ -841,7 +845,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             else:
                 xs = multimodal_encodeds[0]
             multimodal_encoded = hidden_layer(np.sum(multimodal_hidden_shape), activation=activation_function)(xs)
-            x = Dropout(.3)(multimodal_encoded)
+            x = Dropout(.1)(multimodal_encoded)
             multimodal_output = Dense(num_classes, activation='softmax', name='clf_out')(x)
 
             classification_model = Model(multimodal_input_datas, multimodal_output)

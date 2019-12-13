@@ -11,6 +11,7 @@ import numpy as np
 
 import warnings
 
+from core.models.optimized_model import OptimizedModel
 from .utils.encoders import MyLabelEncoder
 from configs import *
 from sklearn.model_selection import StratifiedKFold
@@ -82,7 +83,8 @@ class HierarchicalClassifier(object):
     def __init__(self, input_file, levels_number, max_level_target, level_target, features_number, packets_number,
                  classifier_class, classifier_opts, detector_class, detector_opts, workers_number, anomaly_classes,
                  anomaly_classes_ratio, epochs_number, arbitrary_discr, n_clusters, anomaly, deep, hidden_classes,
-                 benign_class, nominal_features_index, optimize, optimizer, weight_features, parallelize, buckets_number,
+                 benign_class, nominal_features_index, optimize, optimizer, weight_features, parallelize,
+                 buckets_number,
                  unsupervised, multimodal_index, embedding):
 
         self.input_file = input_file
@@ -412,7 +414,9 @@ class HierarchicalClassifier(object):
             # If is passed a detector that works with keras, perform a OneHotEncoding, else proceed with OrdinalEncoder
             if self.nominal_features_index is None:
                 self.nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
-                                               dataset['attributes'][i][attribute_type_index] not in [u'NUMERIC', u'REAL', u'SPARRAY']]
+                                               dataset['attributes'][i][attribute_type_index] not in [u'NUMERIC',
+                                                                                                      u'REAL',
+                                                                                                      u'SPARRAY']]
             self.numerical_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
                                              dataset['attributes'][i][attribute_type_index] in [u'NUMERIC', u'REAL']]
             self.fine_nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
@@ -430,7 +434,8 @@ class HierarchicalClassifier(object):
             if self.detector_class == 'mlo':
                 mode = core.utils.preprocessing.MLO
             elif self.multimodal:
-                self.modalities = [x[self.multimodal_index+1] for x in dataset['attributes'][:self.dataset_features_number]]
+                self.modalities = [x[self.multimodal_index + 1] for x in
+                                   dataset['attributes'][:self.dataset_features_number]]
                 mode = core.utils.preprocessing.MULMO
             else:
                 mode = core.utils.preprocessing.CUSTOM
@@ -600,7 +605,8 @@ class HierarchicalClassifier(object):
         # Testing set of each fold are not overlapping, we use only one array to maintain all the predictions over the folds
         self.predictions = np.ndarray(shape=self.labels.shape, dtype=object)
 
-        for fold_cnt, (train_index, test_index) in enumerate(skf.split(np.zeros(shape=self.labels.shape), self.labels[:, -1])):
+        for fold_cnt, (train_index, test_index) in enumerate(
+                skf.split(np.zeros(shape=self.labels.shape), self.labels[:, -1])):
 
             if fold_cnt < starting_fold or fold_cnt > ending_fold - 1:
                 continue
@@ -716,11 +722,14 @@ class HierarchicalClassifier(object):
         for node in nodes:
             try:
                 pk.dump(node.model_wrapper.model_, open('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.pickle' %
-                    (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),'wb'))
+                                                        (self.material_models_folder, self.arbitrary_discr,
+                                                         self.type_discr, fold_cnt, node.level, self.params_discr,
+                                                         node.tag), 'wb'))
             except:
                 serialization.write('%s%s_multi_%s_fold_%s_level_%s%s_tag_%s_model.model' %
-                    (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt, node.level, self.params_discr, node.tag),
-                    node.model_wrapper.model_)
+                                    (self.material_models_folder, self.arbitrary_discr, self.type_discr, fold_cnt,
+                                     node.level, self.params_discr, node.tag),
+                                    node.model_wrapper.model_)
         # MEAN WEIGHT MODEL
         # if self.anomaly and self.deep:
 
@@ -854,7 +863,7 @@ class HierarchicalClassifier(object):
     def Sklearn_RandomForest(self, node):
         # Instantation
         model = OutputCodeClassifier(RandomForestClassifier(n_estimators=100, n_jobs=-1),
-                                          code_size=np.ceil(np.log2(node.children_number) / node.children_number))
+                                     code_size=np.ceil(np.log2(node.children_number) / node.children_number))
         return model
 
     # TODO: does not apply preprocessing to dataset (if applied per-node)
@@ -865,15 +874,20 @@ class HierarchicalClassifier(object):
 
     def Keras_Classifier(self, node):
         # Instantation
-        model = SklearnKerasWrapper(*node.classifier_opts, model_class=node.classifier_class,
-                                    epochs_number=self.epochs_number,
-                                    num_classes=node.children_number,
-                                    nominal_features_index=self.nominal_features_index,
-                                    fine_nominal_features_index=self.fine_nominal_features_index,
-                                    numerical_features_index=self.numerical_features_index, level=node.level,
-                                    fold=node.fold, classify=True,
-                                    weight_features=self.weight_features, arbitrary_discr=self.arbitrary_discr,
-                                    modalities=self.modalities, embedding=self.embedding)
+        if self.optimizer != 'ga':
+            model = SklearnKerasWrapper(*node.classifier_opts, model_class=node.classifier_class,
+                                        epochs_number=self.epochs_number,
+                                        num_classes=node.children_number,
+                                        nominal_features_index=self.nominal_features_index,
+                                        fine_nominal_features_index=self.fine_nominal_features_index,
+                                        numerical_features_index=self.numerical_features_index, level=node.level,
+                                        fold=node.fold, classify=True,
+                                        weight_features=self.weight_features, arbitrary_discr=self.arbitrary_discr,
+                                        modalities=self.modalities, embedding=self.embedding)
+        else:
+            model = OptimizedModel(model_class=node.classifier_class, level=node.level, fold=node.fold,
+                                   arbitrary_discr=self.arbitrary_discr, classify=True, modalities=self.modalities,
+                                   workers_number=None, num_classes=node.children_number)
         return model
 
     def Keras_StackedDeepAutoencoderClassifier(self, node):
@@ -894,8 +908,10 @@ class HierarchicalClassifier(object):
     def _AnomalyDetector(self, node):
         # Instantation
         model = AnomalyDetector(node.detector_class, node.detector_opts,
-                                node.label_encoder.transform([self.anomaly_class])[0], self.anomaly_class_ratio, node.features_number,
-                                self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize, self.optimizer,
+                                node.label_encoder.transform([self.anomaly_class])[0], self.anomaly_class_ratio,
+                                node.features_number,
+                                self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize,
+                                self.optimizer,
                                 self.weight_features, self.workers_number, self.unsupervised, self.arbitrary_discr,
                                 self.modalities, self.embedding)
         return model
@@ -903,14 +919,14 @@ class HierarchicalClassifier(object):
     def Spark_Classifier(self, node):
         # Instantation
         model = SklearnSparkWrapper(classifier_class=node.classifier_class,
-                                         num_classes=node.children_number,
-                                         numerical_features_index=self.numerical_features_index,
-                                         nominal_features_index=self.nominal_features_index,
-                                         fine_nominal_features_index=self.fine_nominal_features_index,
-                                         classifier_opts=node.classifier_opts,
-                                         epochs_number=self.epochs_number, level=node.level, fold=node.fold,
-                                         classify=True, workers_number=self.workers_number,
-                                         arbitrary_discr=self.arbitrary_discr)
+                                    num_classes=node.children_number,
+                                    numerical_features_index=self.numerical_features_index,
+                                    nominal_features_index=self.nominal_features_index,
+                                    fine_nominal_features_index=self.fine_nominal_features_index,
+                                    classifier_opts=node.classifier_opts,
+                                    epochs_number=self.epochs_number, level=node.level, fold=node.fold,
+                                    classify=True, workers_number=self.workers_number,
+                                    arbitrary_discr=self.arbitrary_discr)
         model.set_oracle(
             node.label_encoder.transform(self.labels[node.test_index, node.level])
         )
@@ -957,7 +973,7 @@ class HierarchicalClassifier(object):
     def Weka_SuperLearner(self, node):
         # Instantation
         model = SuperLearnerClassifier(self.super_learner_default, node.children_number,
-                                            node.label_encoder.transform([self.anomaly_class])[0], node.features_number)
+                                       node.label_encoder.transform([self.anomaly_class])[0], node.features_number)
         model.set_oracle(
             node.label_encoder.transform(self.labels[node.test_index_all, node.level])
         )
@@ -981,6 +997,8 @@ class HierarchicalClassifier(object):
                 [[f[node.train_index] for f in fs] for fs in self.features],
                 node.label_encoder.transform(self.labels[node.train_index, node.level])
             )
+            if self.optimizer == 'ga':
+                node.model_wrapper = node.model_wrapper.model_
         node.training_duration = node.model_wrapper.tr_
         print(
             'Training %s_%s duration [s]: %s                                                                                  '
