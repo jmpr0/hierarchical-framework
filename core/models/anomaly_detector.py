@@ -1,12 +1,15 @@
 import numpy as np
 import time
 from scipy.sparse import issparse
+import random
 
 from ..wrappers.sklearn_wrapper import OneClassSVMAnomalyDetector
 from ..wrappers.sklearn_wrapper import MixtureLocalizationOutliers
 from ..wrappers.sklearn_wrapper import IsolationForestAnomalyDetector
 from ..wrappers.sklearn_wrapper import LocalOutlierFactorAnomalyDetector
 from ..wrappers.keras_wrapper import SklearnKerasWrapper
+from configs import *
+import core.model_selection.optimizers as optimizers
 
 from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import MinMaxScaler
@@ -14,11 +17,12 @@ from sklearn.preprocessing import MinMaxScaler
 
 class AnomalyDetector(object):
 
-    def __init__(self, detector_class, detector_opts, anomaly_class=None, features_number=0, epochs_number=0,
-                 level=0, fold=0, n_clusters=1, optimize=False, weight_features=False, workers_number=1,
-                 unsupervised=False, arbitrary_discr='', modalities=None):
+    def __init__(self, detector_class, detector_opts, anomaly_class=None, anomaly_class_ratio=None, features_number=0,
+                 epochs_number=0, level=0, fold=0, n_clusters=1, optimize=False, optimizer=None, weight_features=False,
+                 workers_number=1, unsupervised=False, arbitrary_discr='', modalities=None, embedding=False):
 
         self.anomaly_class = anomaly_class
+        self.anomaly_class_ratio = anomaly_class_ratio
         if self.anomaly_class == 1:
             self.normal_class = 0
         else:
@@ -54,7 +58,7 @@ class AnomalyDetector(object):
                         'n_estimators': [int(i) for i in np.linspace(10, 300, 5)],
                         'contamination': [0.]
                     }
-                # self.grid_search_anomaly_detector = GridSearchCV(anomaly_detector, param_grid)
+                # self.anomaly_detector_optimizer = GridSearchCV(anomaly_detector, param_grid)
             elif detector_class == 'slo':
                 if not self.optimize:
                     self.anomaly_detector = LocalOutlierFactorAnomalyDetector(
@@ -88,7 +92,8 @@ class AnomalyDetector(object):
                     self.anomaly_detector = SklearnKerasWrapper(*detector_opts, model_class=detector_class,
                                                                 num_classes=2, epochs_number=epochs_number, level=level,
                                                                 fold=fold, weight_features=weight_features,
-                                                                arbitrary_discr=arbitrary_discr, modalities=modalities)
+                                                                arbitrary_discr=arbitrary_discr, modalities=modalities,
+                                                                embedding=embedding)
                 else:
                     # Parameters for Grid Search
                     anomaly_detector = SklearnKerasWrapper()
@@ -96,9 +101,9 @@ class AnomalyDetector(object):
                         'sharing_ray': [str(i) for i in range(-1, d + 1)],
                         'grafting_depth': [str(i) for i in range(0, d + 2)],
                         'depth': [str(d)],
-                        'compression_ratio': ['.1'],
+                        'compression_ratio': ['.1', '.25', '.5'],
                         'mode': ['n'],
-                        'hidden_activation_function_name': ['elu'],
+                        'hidden_activation_function_name': ['relu', 'elu'],
                         'model_class': [detector_class],
                         'epochs_number': [epochs_number],
                         'num_classes': [2],
@@ -112,8 +117,10 @@ class AnomalyDetector(object):
         self.detector_class = detector_class
 
         if self.optimize:
-            self.grid_search_anomaly_detector = GridSearchCV(anomaly_detector, param_grid, verbose=1,
-                                                             n_jobs=workers_number)
+            optimizer_fun = getattr(optimizers, supported_optimizers[optimizer])
+            # TODO: the GeneticAlgorithm takes in input the ModelName and no function (ModelName())
+            self.anomaly_detector_optimizer = optimizer_fun(anomaly_detector, param_grid, verbose=1,
+                                                            n_jobs=workers_number)
             self.file_out = 'data_%s/material/optimization_results_fold_%s.csv' % (detector_class, fold)
 
         self.model_ = None
@@ -122,6 +129,9 @@ class AnomalyDetector(object):
 
         if not self.unsupervised:
             normal_index = [i for i, gt in enumerate(ground_truth) if gt == self.normal_class]
+            anomaly_index = random.sample([i for i, gt in enumerate(ground_truth) if gt == self.anomaly_class],
+                                          int(np.ceil(len(ground_truth) * self.anomaly_class_ratio)))
+            normal_index += anomaly_index
         else:
             normal_index = [i for i in range(len(ground_truth))]
 
@@ -140,14 +150,14 @@ class AnomalyDetector(object):
             # if self.dl:
             if self.optimize:
                 t = time.time() - t
-                self.grid_search_anomaly_detector.fit(local_training_set, ground_truth[normal_index])
+                self.anomaly_detector_optimizer.fit(local_training_set, ground_truth[normal_index])
                 t = time.time() - t
-                self.anomaly_detector = self.grid_search_anomaly_detector.best_estimator_
+                self.anomaly_detector = self.anomaly_detector_optimizer.best_estimator_
                 import pandas as pd
-                df = pd.DataFrame(list(self.grid_search_anomaly_detector.cv_results_['params']))
-                ranking = self.grid_search_anomaly_detector.cv_results_['rank_test_score']
+                df = pd.DataFrame(list(self.anomaly_detector_optimizer.cv_results_['params']))
+                ranking = self.anomaly_detector_optimizer.cv_results_['rank_test_score']
                 # The sorting is done based on the test_score of the models.
-                sorting = np.argsort(self.grid_search_anomaly_detector.cv_results_['rank_test_score'])
+                sorting = np.argsort(ranking)
                 # Sort the lines based on the ranking of the models
                 df_final = df.iloc[sorting]
                 # The first line contains the best model and its parameters

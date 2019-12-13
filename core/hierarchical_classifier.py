@@ -81,9 +81,9 @@ class HierarchicalClassifier(object):
 
     def __init__(self, input_file, levels_number, max_level_target, level_target, features_number, packets_number,
                  classifier_class, classifier_opts, detector_class, detector_opts, workers_number, anomaly_classes,
-                 epochs_number, arbitrary_discr, n_clusters, anomaly, deep, hidden_classes, benign_class,
-                 nominal_features_index,
-                 optimize, weight_features, parallelize, buckets_number, unsupervised, multimodal_index):
+                 anomaly_classes_ratio, epochs_number, arbitrary_discr, n_clusters, anomaly, deep, hidden_classes,
+                 benign_class, nominal_features_index, optimize, optimizer, weight_features, parallelize, buckets_number,
+                 unsupervised, multimodal_index, embedding):
 
         self.input_file = input_file
         self.levels_number = levels_number
@@ -98,6 +98,7 @@ class HierarchicalClassifier(object):
         self.workers_number = workers_number
         self.has_config = False
         self.anomaly_classes = anomaly_classes
+        self.anomaly_classes_ratio = anomaly_classes_ratio
         self.epochs_number = epochs_number
         self.arbitrary_discr = arbitrary_discr
         self.n_clusters = n_clusters
@@ -110,6 +111,7 @@ class HierarchicalClassifier(object):
 
         self.nominal_features_index = nominal_features_index
         self.optimize = optimize
+        self.optimizer = optimizer
         self.weight_features = weight_features
         self.parallelize = parallelize
         self.unsupervised = unsupervised
@@ -118,6 +120,7 @@ class HierarchicalClassifier(object):
             self.multimodal = True
         else:
             self.multimodal = False
+        self.embedding = embedding
 
         self.super_learner_default = ['ssv', 'sif']
 
@@ -141,6 +144,7 @@ class HierarchicalClassifier(object):
         self.numerical_features_length = -1
         self.nominal_features_lengths = list()
         self.anomaly_class = ''
+        self.anomaly_class_ratio = 0
 
     def set_config(self, config_name, config):
         self.has_config = True
@@ -366,7 +370,7 @@ class HierarchicalClassifier(object):
         if not memoryless and os.path.exists('%s.yetpreprocessed.pickle' % self.input_file):
             self.features_names, self.nominal_features_index, self.numerical_features_index, \
             self.fine_nominal_features_index, self.attributes_number, self.dataset_features_number, \
-            self.features_number, self.anomaly_class, self.features, self.labels = pk.load(
+            self.features_number, self.anomaly_class, self.anomaly_class_ratio, self.features, self.labels = pk.load(
                 open('%s.yetpreprocessed.pickle' % self.input_file, 'rb'))
         else:
             # load .arff file
@@ -399,6 +403,8 @@ class HierarchicalClassifier(object):
                     with open(self.input_file, 'rb') as dataset_pk:
                         dataset = pk.load(dataset_pk)
 
+            attribute_type_index = 2
+
             data = np.array(dataset['data'], dtype=object)
 
             self.features_names = [x[0] for x in dataset['attributes']]
@@ -406,11 +412,11 @@ class HierarchicalClassifier(object):
             # If is passed a detector that works with keras, perform a OneHotEncoding, else proceed with OrdinalEncoder
             if self.nominal_features_index is None:
                 self.nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
-                                               dataset['attributes'][i][1] not in [u'NUMERIC', u'REAL', u'SPARRAY']]
+                                               dataset['attributes'][i][attribute_type_index] not in [u'NUMERIC', u'REAL', u'SPARRAY']]
             self.numerical_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
-                                             dataset['attributes'][i][1] in [u'NUMERIC', u'REAL']]
+                                             dataset['attributes'][i][attribute_type_index] in [u'NUMERIC', u'REAL']]
             self.fine_nominal_features_index = [i for i in range(len(dataset['attributes'][:-self.levels_number])) if
-                                                dataset['attributes'][i][1] in [u'SPARRAY']]
+                                                dataset['attributes'][i][attribute_type_index] in [u'SPARRAY']]
 
             # Pre-assigment of temporary values
             self.attributes_number = data.shape[1]
@@ -430,6 +436,8 @@ class HierarchicalClassifier(object):
                 mode = core.utils.preprocessing.CUSTOM
                 if not self.deep:
                     mode += '-' + core.utils.preprocessing.FLATTEN
+            # if self.embedding:
+            #     mode += '-' + core.utils.preprocessing.EMB
             self.features = core.utils.preprocessing.preprocess_dataset(self.features, self.nominal_features_index,
                                                                         mode=mode, modalities=self.modalities)
 
@@ -440,16 +448,20 @@ class HierarchicalClassifier(object):
 
             if self.anomaly and len(self.anomaly_classes) > 0:
                 self.anomaly_class = apply_anomalies(self.labels, self.level_target, self.anomaly_classes)
+                self.anomaly_class_ratio = np.max(self.anomaly_classes_ratio)
+                if self.anomaly_class_ratio != 0:
+                    self.arbitrary_discr += '_a_%s' % int(self.anomaly_class_ratio * 100)
             if self.benign_class != '':
                 self.anomaly_class = apply_benign_hiddens(self.labels, self.level_target, self.benign_class,
                                                           self.hidden_classes)
+                self.anomaly_class_ratio = np.max(self.anomaly_classes_ratio)
 
             if not memoryless:
                 pk.dump(
                     [
                         self.features_names, self.nominal_features_index, self.numerical_features_index,
                         self.fine_nominal_features_index, self.attributes_number, self.dataset_features_number,
-                        self.features_number, self.anomaly_class, self.features, self.labels
+                        self.features_number, self.anomaly_class, self.anomaly_class_ratio, self.features, self.labels
                     ]
                     , open('%s.yetpreprocessed.pickle' % self.input_file, 'wb'), pk.HIGHEST_PROTOCOL)
 
@@ -861,7 +873,7 @@ class HierarchicalClassifier(object):
                                     numerical_features_index=self.numerical_features_index, level=node.level,
                                     fold=node.fold, classify=True,
                                     weight_features=self.weight_features, arbitrary_discr=self.arbitrary_discr,
-                                    modalities=self.modalities)
+                                    modalities=self.modalities, embedding=self.embedding)
         return model
 
     def Keras_StackedDeepAutoencoderClassifier(self, node):
@@ -882,10 +894,10 @@ class HierarchicalClassifier(object):
     def _AnomalyDetector(self, node):
         # Instantation
         model = AnomalyDetector(node.detector_class, node.detector_opts,
-                                node.label_encoder.transform([self.anomaly_class])[0], node.features_number,
-                                self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize,
+                                node.label_encoder.transform([self.anomaly_class])[0], self.anomaly_class_ratio, node.features_number,
+                                self.epochs_number, node.level, node.fold, self.n_clusters, self.optimize, self.optimizer,
                                 self.weight_features, self.workers_number, self.unsupervised, self.arbitrary_discr,
-                                self.modalities)
+                                self.modalities, self.embedding)
         return model
 
     def Spark_Classifier(self, node):

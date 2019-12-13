@@ -12,6 +12,9 @@ CUSTOM = 'custom'
 FLATTEN = 'flatten'
 MLO = 'mlo'
 MULMO = 'multimodal'
+EMB = 'embedding'
+
+features_encoders = []
 
 
 def preprocess_dataset(X, nominal_features_index, mode=CLASSIC, modalities=None):
@@ -29,26 +32,24 @@ def preprocess_dataset(X, nominal_features_index, mode=CLASSIC, modalities=None)
         X = pca(X, n_components=10)
         # Z-score
         X = z_score(X)
-    elif MULMO in mode:
+    elif MULMO in mode and EMB not in mode:
         ohe(X, nominal_features_index)
         X = multimodal_split(X, modalities)
-        pass
+    elif EMB in mode:
+        # OrdinalEncoding for embeddings of categorical features
+        oe(X, nominal_features_index)
+        if MULMO in mode:
+            X = multimodal_split(X, modalities)
     if FLATTEN in mode:
         X = sparse_flattening(X)
     return X
 
 
-def ohe(X, nominal_features_index, features_encoders=None):
-    if features_encoders is None:
-        features_encoders = []
-        for i in nominal_features_index:
-            features_encoder = OneHotEncoder()
-            X[:, i] = [sp for sp in features_encoder.fit_transform(X[:, i].reshape(-1, 1))]
-            features_encoders.append(features_encoder)
-        return features_encoders
-    else:
-        for i, features_encoder in zip(nominal_features_index, features_encoders):
-            X[:, i] = [sp for sp in features_encoder.transform(X[:, i].reshape(-1, 1))]
+def ohe(X, nominal_features_index):
+    for i in nominal_features_index:
+        features_encoder = OneHotEncoder()
+        X[:, i] = [sp for sp in features_encoder.fit_transform(X[:, i].reshape(-1, 1))]
+        features_encoders.append(features_encoder)
 
 
 def sparse_flattening(X):

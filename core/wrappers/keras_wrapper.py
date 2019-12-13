@@ -11,6 +11,7 @@ from sklearn.base import ClassifierMixin
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics.classification import balanced_accuracy_score
 
 from keras.models import Model
 from keras.layers import Dense
@@ -19,6 +20,7 @@ from keras.layers import Conv2D
 from keras.layers import Dropout
 from keras.layers import Add
 from keras.layers import ReLU
+from keras.layers import Embedding
 from keras.callbacks import EarlyStopping
 from keras.callbacks import CSVLogger
 from keras import backend as K
@@ -55,19 +57,20 @@ def ResidualDense(output_dim, activation='relu', internal_depth=1, name='residua
         x = Add()([x, internal_x])
         x = ReLU()(x)
         return x
+
     return inside
 
 
 class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
-    def __init__(self, depth='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1',
+    def __init__(self, n_hidden_layers='3', hidden_activation_function_name='relu', mode='n', compression_ratio='.1',
                  sharing_ray='0', grafting_depth='0', model_class='kdae', epochs_number=10, num_classes=1,
                  nominal_features_index=None, fine_nominal_features_index=None, numerical_features_index=None, fold=0,
-                 level=0, classify=False, weight_features=False, arbitrary_discr='', modalities=None):
+                 level=0, classify=False, weight_features=False, arbitrary_discr='', modalities=None, embedding=False):
 
         model_discr = model_class + '_' + '_'.join(
             [str(c) for c in
-             [depth, hidden_activation_function_name, mode]]
+             [n_hidden_layers, hidden_activation_function_name, mode]]
         )
         if model_class in ['km2ae', 'kdae', 'km2nn', 'kresm2nn']:
             model_discr += '_%s' % compression_ratio
@@ -76,8 +79,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
         self.sharing_ray = int(sharing_ray)
         self.grafting_depth = int(grafting_depth)
-        self.depth = int(depth)
-        self.half_depth = int(np.floor((self.depth - eps) / 2) + 1)
+        self.n_hidden_layers = int(n_hidden_layers)
+        self.n_hidden_layers_ae = int(np.floor((self.n_hidden_layers - eps) / 2) + 1)
         self.compression_ratio = float(compression_ratio)
         self.sparse = False
         self.variational = False
@@ -85,6 +88,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         self.propagational = False
         self.multimodal = modalities is not None
         self.modalities = modalities
+        self.embedding = embedding
         self.auto = False
         self.mode = mode
         self.fold = fold
@@ -107,7 +111,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             if 'a' in mode:
                 self.auto = True
                 model_discr = model_class + '_' + '_'.join(
-                    [str(c) for c in [depth, hidden_activation_function_name, mode, compression_ratio]]
+                    [str(c) for c in [n_hidden_layers, hidden_activation_function_name, mode, compression_ratio]]
                 )
         self.hidden_activation_function_name = hidden_activation_function_name
         self.hidden_activation_function = globals()[hidden_activation_function_name]
@@ -416,43 +420,44 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
     def mulmo_fit(self, X, y=None):
         self.num_modality = len(X)
-        self.nominal_features_index = [
+        self.sparse_features_index = [
             [i for i in range(len(modality)) if issparse(modality[i][0])] for modality in X]
         self.multimodal_feature_lengths = [
             [feature[0].shape[1] if j in index else feature.shape[1] for j, feature in enumerate(modality)] for
             modality, index in
-            zip(X, self.nominal_features_index)]
+            zip(X, self.sparse_features_index)]
         self.multimodal_loss_functions = [
             ['categorical_crossentropy' if j in index else 'mean_squared_error' for j, feature in enumerate(modality)]
             for
             modality, index in
-            zip(X, self.nominal_features_index)]
+            zip(X, self.sparse_features_index)]
         self.multimodal_loss_functions = [e for a in self.multimodal_loss_functions for e in a]
         self.multimodal_output_functions = [
             ['softmax' if j in index else 'sigmoid' for j, feature in enumerate(modality)] for
             modality, index in
-            zip(X, self.nominal_features_index)]
+            zip(X, self.sparse_features_index)]
 
         # Weighted is enabled by default
         self.multimodal_weights = [
             [1 if j in index else self.multimodal_feature_lengths[m][j] for j, feature in enumerate(modality)] for
             m, (modality, index) in
-            enumerate(zip(X, self.nominal_features_index))]
+            enumerate(zip(X, self.sparse_features_index))]
         self.multimodal_weights = [e for a in self.multimodal_weights for e in a]
 
         reconstruction_models, _, classification_models, models_names = self.init_models(self.model_class,
                                                                                          self.num_classes,
                                                                                          self.classify)
+
         # Scaling training set for Autoencoder
         one_hot_y = None
         for m, X_mod in enumerate(X):
             self.scalers.append(MinMaxScaler())
-            index = [i for i in range(len(X_mod)) if i not in self.nominal_features_index[m]]
+            index = [i for i in range(len(X_mod)) if i not in self.sparse_features_index[m]]
             if len(index) > 0:
                 index = index[0]
                 X_mod[index] = self.scalers[-1].fit_transform(X_mod[index])
         X = [[csr_matrix([v.toarray()[0] for v in feature]) if i in index else feature for i, feature in
-              enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
+              enumerate(modality)] for modality, index in zip(X, self.sparse_features_index)]
         X = [e for a in X for e in a]
         if self.classify:
             one_hot_y = self.label_encoder.fit_transform(y.reshape(-1, 1))
@@ -599,8 +604,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         models_n = []
 
         if self.auto:
-            range_sr = range(0, self.half_depth + 1, self.complexity_red)
-            range_gd = range(0, self.half_depth + 1, self.complexity_red)
+            range_sr = range(0, self.n_hidden_layers_ae + 1, self.complexity_red)
+            range_gd = range(0, self.n_hidden_layers_ae + 1, self.complexity_red)
         else:
             range_sr = [self.sharing_ray]
             range_gd = [self.grafting_depth]
@@ -640,7 +645,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
         activation_function = self.hidden_activation_function
         if not self.classify:
-            reduction_coeff = self.compression_ratio ** (1 / self.half_depth)
+            reduction_coeff = self.compression_ratio ** (1 / self.n_hidden_layers_ae)
         else:
             multimodal_hidden_shape = [int(np.ceil(np.sum(feature_lengths) / 10) * 10) for feature_lengths in
                                        self.multimodal_feature_lengths]
@@ -670,7 +675,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             for concat in concats:
                 x = concat
                 multimodal_dims.append([])
-                for _ in range(self.half_depth - 1):
+                for _ in range(self.n_hidden_layers_ae - 1):
                     input_shape = x._keras_shape[1]
                     multimodal_dims[-1].append(input_shape)
                     output_shape = int(np.ceil(input_shape * reduction_coeff))
@@ -688,7 +693,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             # Decoder
             for i in range(self.num_modality):
                 x = multimodal_encoded
-                for j in reversed(range(self.depth - self.half_depth)):
+                for j in reversed(range(self.n_hidden_layers - self.n_hidden_layers_ae)):
                     output_shape = multimodal_dims[i][j]
                     x = Dense(output_shape, activation=activation_function)(x)
                 # Output
@@ -749,7 +754,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             for concat in concats:
                 x = concat
                 multimodal_dims.append([])
-                for _ in range(self.half_depth - 1):
+                for _ in range(self.n_hidden_layers_ae - 1):
                     input_shape = x._keras_shape[1]
                     multimodal_dims[-1].append(input_shape)
                     output_shape = int(np.ceil(input_shape * reduction_coeff))
@@ -766,7 +771,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             # Decoder
             for i in range(self.num_modality):
                 x = multimodal_encoded
-                for j in reversed(range(self.depth - self.half_depth)):
+                for j in reversed(range(self.n_hidden_layers - self.n_hidden_layers_ae)):
                     output_shape = multimodal_dims[i][j]
                     x = BinaryDense(output_shape, H=H, kernel_lr_multiplier=kernel_lr_multiplier, use_bias=False,
                                     activation=binary_tanh)(x)
@@ -800,6 +805,17 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
 
             multimodal_input_datas = [Input(shape=(length,)) for lengths in self.multimodal_feature_lengths for length
                                       in lengths]
+            # TODO: it works only in single modality, because the ordinal features re not ordered with modlaities,
+            #  and the nominal_features_index loss mean
+            if self.embedding:
+                # pass
+                # TODO: Applying embedding to nominal features, embedding layer will learn the ceil(log2(dim)) representation of input.
+                multimodal_input_datas = [
+                    multimodal_input_datas[i] if i not in self.nominal_features_index else Embedding(
+                        int(multimodal_input_datas[i].shape[1]),
+                        int(np.ceil(np.log2(int(multimodal_input_datas[i].shape[1])))),
+                        input_length=int(multimodal_input_datas[i].shape[1]))(multimodal_input_datas[i])
+                    for i in range(len(multimodal_input_datas))]
             multimodal_indexes = [(0, len(self.multimodal_feature_lengths[0]))]
             for i in range(1, self.num_modality):
                 multimodal_indexes.append(
@@ -816,7 +832,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             # MLP
             for i, concat in enumerate(concats):
                 x = concat
-                for _ in range(self.depth - 1):
+                for _ in range(self.n_hidden_layers - 1):
                     x = hidden_layer(multimodal_hidden_shape[i], activation=activation_function)(x)
                 multimodal_encodeds.append(x)
             # Common final layer
@@ -849,24 +865,24 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         if grafting_depth is None:
             grafting_depth = self.grafting_depth
 
-        reduction_coeff = self.compression_ratio ** (1 / self.half_depth)
+        reduction_coeff = self.compression_ratio ** (1 / self.n_hidden_layers_ae)
         adj_factor = 0
-        if self.depth % 2 != 0:
+        if self.n_hidden_layers % 2 != 0:
             adj_factor = 1
-        # reduction_factors = [1.] + [1 - reduction_coeff * (i + 1) for i in range(self.depth)]
+        # reduction_factors = [1.] + [1 - reduction_coeff * (i + 1) for i in range(self.n_hidden_layers)]
         # print(sharing_ray, grafting_depth)
         # print(reduction_coeff)
         # print(reduction_factors)
         # latent_ratio = reduction_factors[-1]
         # This parameter is used to set the number of e/d layers nearest the middle layer to join
         # If it's more or equal than zero, the middle layer is automatically joined
-        # The parameter take values in [0,self.depth], where 0 states no join
+        # The parameter take values in [0,self.n_hidden_layers], where 0 states no join
         # If it's more than zero, it indicates the couple of e/d layers to join, starting from central
         # sharing_ray = -1
         # This parameter specify at which level num model grafts on nom one
-        # It takes values in [0,self.depth], where self.depth state for no graft, and others value refers to the 0,1,2,..self.depth-1 i-e/d layer
-        # E.g. if it is equal to self.depth-1, the graft is done on last layer, if to 0, on the first encoder layer
-        # grafting_depth = self.depth-1
+        # It takes values in [0,self.n_hidden_layers], where self.n_hidden_layers state for no graft, and others value refers to the 0,1,2,..self.n_hidden_layers-1 i-e/d layer
+        # E.g. if it is equal to self.n_hidden_layers-1, the graft is done on last layer, if to 0, on the first encoder layer
+        # grafting_depth = self.n_hidden_layers-1
         num_hidden_activation_function = self.hidden_activation_function
         nom_hidden_activation_function = self.hidden_activation_function
         hyb_activation_function = self.hidden_activation_function
@@ -891,8 +907,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 reconstruction_models.append(reconstruction_model)
                 compression_models.append(compression_model)
         if model_class == 'kdae' or model_class == 'kc2dae':
-            if sharing_ray < 0 or sharing_ray > self.half_depth or grafting_depth < 0 or grafting_depth > self.half_depth:
-                print('Inserted sharing ray or grafting depth are invalid.')
+            if sharing_ray < 0 or sharing_ray > self.n_hidden_layers_ae or grafting_depth < 0 or grafting_depth > self.n_hidden_layers_ae:
+                print('Inserted sharing ray or grafting n_hidden_layers are invalid.')
                 exit(1)
             # shared_factors = []
             # if sharing_ray > 0:
@@ -923,12 +939,12 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             #
             # # Building model for numerical features
             # x = input_datas[0]
-            # for i in range(np.min([self.depth, grafting_depth])):
+            # for i in range(np.min([self.n_hidden_layers, grafting_depth])):
             #     output_dim = int(np.ceil(reduction_factors[i] * self.numerical_features_length))
-            #     if i < self.depth - 1:
+            #     if i < self.n_hidden_layers - 1:
             #         print('Adding Numerical Encoder')
             #         x = Dense(output_dim, activation=num_hidden_activation_function, name='num_enc%s' % i)(x)
-            #     if i == self.depth - 1:  # If numerical model reaches the max depth (no grafting)
+            #     if i == self.n_hidden_layers - 1:  # If numerical model reaches the max n_hidden_layers (no grafting)
             #         if not self.variational:
             #             print('Adding Last Numerical Encoder')
             #             x = Dense(output_dim, activation=num_hidden_activation_function, name='num_enc%s' % i)(x)
@@ -951,15 +967,15 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             # for i, nom_length in enumerate(self.nominal_features_lengths):
             #     # Instantiate separated inputs
             #     x = input_datas[i + 1]
-            #     for j in range(self.depth - sharing_ray):
+            #     for j in range(self.n_hidden_layers - sharing_ray):
             #         if j == grafting_depth:  # Saving layer to be grafted as graft_in
             #             concat_ix = concatenate([graft_in, x])
             #             x = concat_ix
             #         output_dim = int(np.ceil(reduction_factors[j] * nom_length))
-            #         if j < self.depth - 1:
+            #         if j < self.n_hidden_layers - 1:
             #             print('Adding Nominal %s Encoder' % j)
             #             x = Dense(output_dim, activation=nom_hidden_activation_function, name='nom_enc%s%s' % (i, j))(x)
-            #         if j == self.depth - 1:
+            #         if j == self.n_hidden_layers - 1:
             #             if not self.variational:
             #                 print('Adding Last Nominal %s Encoder' % j)
             #                 x = Dense(output_dim, activation=nom_hidden_activation_function,
@@ -982,11 +998,11 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             #     x = concat_xs
             #     for i, join_factor in enumerate(shared_factors):
             #         shared_length = np.sum(self.nominal_features_lengths)
-            #         if grafting_depth < self.depth:
+            #         if grafting_depth < self.n_hidden_layers:
             #             shared_length += self.numerical_features_length
             #         output_dim = int(np.ceil(join_factor * shared_length))
             #         if i < np.floor(len(shared_factors) / 2.):  # Adding encoding shared layers
-            #             if i == (grafting_depth - self.depth + sharing_ray):  # Saving graft_in
+            #             if i == (grafting_depth - self.n_hidden_layers + sharing_ray):  # Saving graft_in
             #                 concat_ix = concatenate([graft_in, x])
             #                 x = concat_ix
             #             if i != np.floor(len(shared_factors) / 2.) - 1:
@@ -1018,20 +1034,20 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             #                 x = Dense(output_dim, activation=hyb_activation_function,
             #                           name='nom_pjdec%s' % (i - sharing_ray - 1))(x)
             #                 del propagateds['hyb'][-1]
-            #             if i == (-grafting_depth + self.depth + sharing_ray):  # Saving graft_out
+            #             if i == (-grafting_depth + self.n_hidden_layers + sharing_ray):  # Saving graft_out
             #                 graft_out.append(x)
             #         xs = [x] * len(self.nominal_features_lengths)
             # for i, nom_length in enumerate(self.nominal_features_lengths):
             #     x = xs[i]
-            #     for j in reversed(range(self.depth - np.max([0, sharing_ray]))):  # Adding decoder layers
+            #     for j in reversed(range(self.n_hidden_layers - np.max([0, sharing_ray]))):  # Adding decoder layers
             #         output_dim = int(np.ceil(reduction_factors[j] * nom_length))
             #         print('Adding Nominal %s Decoder' % j)
             #         x = Dense(output_dim, activation=nom_hidden_activation_function,
-            #                   name='nom_dec%s%s' % (i, self.depth - j - 1))(x)
+            #                   name='nom_dec%s%s' % (i, self.n_hidden_layers - j - 1))(x)
             #         if self.propagational:
             #             x = concatenate([x, propagateds['nom%s' % i][-1]])
             #             x = Dense(output_dim, activation=hyb_activation_function,
-            #                       name='nom_pdec%s%s' % (i, self.depth - j - 1))(x)
+            #                       name='nom_pdec%s%s' % (i, self.n_hidden_layers - j - 1))(x)
             #             del propagateds['nom%s' % i][-1]
             #         if j == grafting_depth:  # If layer is graft layer, save graft_out
             #             graft_out.append(x)
@@ -1048,20 +1064,20 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             # else:  # When no graft, we use previously saved numerical output
             #     x = graft_out_bk
             #     print('2')
-            # for i in reversed(range(np.min([self.depth, grafting_depth]))):  # Adding decoder layers
+            # for i in reversed(range(np.min([self.n_hidden_layers, grafting_depth]))):  # Adding decoder layers
             #     output_shape = int(np.ceil(reduction_factors[i] * self.numerical_features_length))
             #     print('Adding Numerical Decoder')
             #     x = Dense(output_shape, activation=self.numerical_output_activation_function,
-            #               name='num_dec%s' % (self.depth - i - 1))(x)
+            #               name='num_dec%s' % (self.n_hidden_layers - i - 1))(x)
             #     if self.propagational:
             #         x = concatenate([x, propagateds['num'][-1]])
             #         x = Dense(output_shape, activation=hyb_activation_function,
-            #                   name='num_pdec%s' % (self.depth - i - 1))(x)
+            #                   name='num_pdec%s' % (self.n_hidden_layers - i - 1))(x)
             #         del propagateds['num'][-1]
             # decodeds = [Dense(self.numerical_features_length, activation=self.numerical_output_activation_function,
             #                   name='num_out')(x)] + decodeds
 
-            # def LSG_DAE_loss(y_true, y_pred, depth, sharing_ray, grafting_depth, losses):
+            # def LSG_DAE_loss(y_true, y_pred, n_hidden_layers, sharing_ray, grafting_depth, losses):
             #
             #
             #
@@ -1097,13 +1113,13 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 )
             # Select first input, that is the numerical
             x = input_datas[0]
-            # Numerical encoder deepness depends on grafting depth
+            # Numerical encoder deepness depends on grafting n_hidden_layers
             for i in range(grafting_depth):
                 input_shape = x._keras_shape[1]
                 output_shape = int(np.ceil(input_shape * reduction_coeff))
                 num_shape.append(input_shape)
                 x = Dense(output_shape, activation=num_hidden_activation_function, name='num_enc%s' % i)(x)
-                if i == self.half_depth - 1:
+                if i == self.n_hidden_layers_ae - 1:
                     encodeds.append(x)
                     num_encoded.append(x)
             # The last numerical tensor should graft on each nominal encoder
@@ -1113,7 +1129,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 x = input_datas[i + 1]
                 nom_shape.append([])
                 # Nominal encoder deepness depends on sharing ray
-                for j in range(self.half_depth - sharing_ray):
+                for j in range(self.n_hidden_layers_ae - sharing_ray):
                     # Since numerical could graft on each level, we first control this
                     if j == grafting_depth:
                         x = concatenate([graft_in, x])
@@ -1121,14 +1137,14 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     output_shape = int(np.ceil(input_shape * reduction_coeff))
                     nom_shape[-1].append(input_shape)
                     x = Dense(output_shape, activation=nom_hidden_activation_function, name='nom_enc%s%s' % (i, j))(x)
-                    if j == self.half_depth - 1:
+                    if j == self.n_hidden_layers_ae - 1:
                         encodeds.append(x)
                         nom_encoded.append(x)
                 # The last nominal tensor should be the input of shared layers
                 xs.append(x)
             x = concatenate(xs)
             # Shared layers depends on sharing ray
-            for i in range(self.half_depth - sharing_ray, self.half_depth):
+            for i in range(self.n_hidden_layers_ae - sharing_ray, self.n_hidden_layers_ae):
                 hybrid = True
                 if i == grafting_depth:
                     x = concatenate([graft_in, x])
@@ -1136,13 +1152,13 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 output_shape = int(np.ceil(input_shape * reduction_coeff))
                 hyb_shape.append(input_shape)
                 x = Dense(output_shape, activation=hyb_activation_function, name='nom_henc%s' % (i))(x)
-                if i == self.half_depth - 1:
+                if i == self.n_hidden_layers_ae - 1:
                     encodeds.append(x)
                     hyb_encoded.append(x)
             # Decoder
             graft_out = []
-            for i in reversed(range(self.half_depth - sharing_ray, self.half_depth - adj_factor)):
-                output_shape = hyb_shape[i - self.half_depth]
+            for i in reversed(range(self.n_hidden_layers_ae - sharing_ray, self.n_hidden_layers_ae - adj_factor)):
+                output_shape = hyb_shape[i - self.n_hidden_layers_ae]
                 x = Dense(output_shape, activation=hyb_activation_function, name='nom_hdec%s' % (i))(x)
                 if i == grafting_depth:
                     graft_out.append(x)
@@ -1156,7 +1172,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 else:
                     x = xs[i]
                 # Nominal decoder deepness depends on sharing ray
-                for j in reversed(range(self.half_depth - sharing_ray - adj_factor)):
+                for j in reversed(range(self.n_hidden_layers_ae - sharing_ray - adj_factor)):
                     output_shape = nom_shape[i][j]
                     x = Dense(output_shape, activation=nom_hidden_activation_function, name='nom_dec%s%s' % (i, j))(x)
                     # Since numerical could graft on each level, we first control this
@@ -1174,7 +1190,7 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             # If graft out is empty, we should take the numerical graft in as input
             else:
                 x = graft_in
-            # Numerical decoder deepness depends on grafting depth
+            # Numerical decoder deepness depends on grafting n_hidden_layers
             for i in reversed(range(grafting_depth - adj_factor)):
                 output_shape = num_shape[i]
                 x = Dense(output_shape, activation=num_hidden_activation_function, name='num_dec%s' % i)(x)
@@ -1253,8 +1269,8 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                     x = compression_model.output
                 initial_size = int(x.shape[1])
                 final_size = num_classes
-                step = (initial_size - final_size) / self.depth
-                mid_sizes = [int(initial_size - step * i) for i in range(1, self.depth)]
+                step = (initial_size - final_size) / self.n_hidden_layers
+                mid_sizes = [int(initial_size - step * i) for i in range(1, self.n_hidden_layers)]
                 for i, mid_size in enumerate(mid_sizes):
                     x = Dense(mid_size, activation=self.hidden_activation_function, name='clf_hid%s' % i)(x)
                 x = Dropout(.1)(x)
@@ -1273,14 +1289,14 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
                 x = input_datas[0]
             else:
                 x = concatenate(input_datas)
-            for i in range(self.depth):
+            for i in range(self.n_hidden_layers):
                 x = Dense(mid_size, activation=self.hidden_activation_function, name='clf_hid%s' % i)(x)
             x = Dropout(.1)(x)
             x = Dense(final_size, activation='softmax', name='clf_out')(x)
             classification_model = Model(input_datas, x)
-            plot_model(classification_model, to_file=self.plot_file + '_d_%s_classification' % (self.depth) + '.png',
+            plot_model(classification_model, to_file=self.plot_file + '_d_%s_classification' % (self.n_hidden_layers) + '.png',
                        show_shapes=True, show_layer_names=True)
-            with open(self.summary_file + '_d_%s_classification' % (self.depth) + '.dat', 'w') as f:
+            with open(self.summary_file + '_d_%s_classification' % (self.n_hidden_layers) + '.dat', 'w') as f:
                 classification_model.summary(print_fn=lambda x: f.write(x + '\n'))
             classification_model.compile(optimizer=Adadelta(lr=1.), loss='categorical_crossentropy')
         # TODO: convolutional layer for mlp to flatten matricial input of weights from NeuralWeightsDecisor
@@ -1292,14 +1308,14 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
             else:
                 x = concatenate(input_datas)
             x = Conv2D()
-            for i in range(self.depth):
+            for i in range(self.n_hidden_layers):
                 x = Dense(mid_size, activation=self.hidden_activation_function, name='clf_hid%s' % i)(x)
             x = Dropout(.1)(x)
             x = Dense(final_size, activation='softmax', name='clf_out')(x)
             classification_model = Model(input_datas, x)
-            plot_model(classification_model, to_file=self.plot_file + '_d_%s_classification' % (self.depth) + '.png',
+            plot_model(classification_model, to_file=self.plot_file + '_d_%s_classification' % (self.n_hidden_layers) + '.png',
                        show_shapes=True, show_layer_names=True)
-            with open(self.summary_file + '_d_%s_classification' % (self.depth) + '.dat', 'w') as f:
+            with open(self.summary_file + '_d_%s_classification' % (self.n_hidden_layers) + '.dat', 'w') as f:
                 classification_model.summary(print_fn=lambda x: f.write(x + '\n'))
             classification_model.compile(optimizer=Adadelta(lr=1.), loss='categorical_crossentropy')
         return reconstruction_model, compression_model, classification_model, model_name
@@ -1349,12 +1365,12 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
     def mulmo_predict(self, X):
 
         for m, X_mod in enumerate(X):
-            index = [i for i in range(len(X_mod)) if i not in self.nominal_features_index[m]]
+            index = [i for i in range(len(X_mod)) if i not in self.sparse_features_index[m]]
             if len(index) > 0:
                 index = index[0]
                 X_mod[index] = self.scalers[m].transform(X_mod[index])
         X = [[csr_matrix([v.toarray()[0] for v in feature]) if i in index else feature for i, feature in
-              enumerate(modality)] for modality, index in zip(X, self.nominal_features_index)]
+              enumerate(modality)] for modality, index in zip(X, self.sparse_features_index)]
         X = [e for a in X for e in a]
 
         if self.binarized:
@@ -1404,7 +1420,11 @@ class SklearnKerasWrapper(BaseEstimator, ClassifierMixin):
         return self.proba
 
     def score(self, X, y=None):
-        return 1 / np.mean(self.predict_proba(X))
+        if y is None:
+            return 1 / np.mean(self.predict_proba(X))
+        else:
+            preds = self.predict(X)
+            return balanced_accuracy_score(y, preds)
 
     def set_oracle(self, oracle):
         self.oracle = oracle

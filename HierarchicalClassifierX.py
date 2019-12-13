@@ -15,7 +15,7 @@ from colorama import Fore, Back, Style
 
 title = pyfiglet.figlet_format(" Hier Frame ", font='bulbhead')
 print(Fore.RED, Back.WHITE)
-print(title, ''.join([' ']*int(len(title)/4-3)), Style.RESET_ALL)
+print(title, ''.join([' '] * int(len(title) / 4 - 3)), Style.RESET_ALL)
 
 os.environ["DISPLAY"] = ":0"  # used to show xming display
 
@@ -44,9 +44,10 @@ epochs_number = 10
 weight_features = False
 anomaly = False
 deep = False
-early = False
+embedding = False
 unsupervised = False
 optimize = False
+optimizer = ''
 nominal_features_index = None
 n_clusters = 1
 multimodal_index = -1
@@ -142,7 +143,7 @@ for opt, arg in opts:
     if opt in ("-N", "--nominal_features_index"):
         nominal_features_index = [int(i) for i in arg.split(',')]
     if opt in ("-O", "--optimize"):
-        optimize = True
+        optimizer = arg
     if opt in ("-T", "--level_target"):
         level_target = int(arg)
     if opt in ("-W", "--weight_features"):
@@ -157,8 +158,8 @@ for opt, arg in opts:
         starting_fold = int(arg)
     if opt in ("-G", "--ending_fold"):
         ending_fold = int(arg)
-    if opt in ("-E", "--early"):
-        early = True
+    if opt in ("-E", "--embedding"):
+        embedding = True
     if opt in ("-M", "--memoryless"):
         memoryless = True
     if opt in ("-m", "--multimodal"):
@@ -167,7 +168,12 @@ for opt, arg in opts:
 if anomaly_classes != '' or (benign_class != '' and hidden_classes == ''):
     anomaly = True
 
-anomaly_classes = [v for v in anomaly_classes.split(',') if v != '']
+if optimizer != '':
+    optimize = True
+
+anomaly_classes_ratio = [float(v.split('§')[1]) if len(v.split('§')) > 1 else 0 for v in anomaly_classes.split(',') if
+                         v != '']
+anomaly_classes = [v.split('§')[0] for v in anomaly_classes.split(',') if v != '']
 hidden_classes = [v for v in hidden_classes.split(',') if v != '']
 
 # import_str variable contains initial character of name of used classifiers
@@ -184,7 +190,7 @@ if config_file:
         config = json.load(f)
 
     for node in config:
-        classifier_class = config[node]['c'].split('_') [0]
+        classifier_class = config[node]['c'].split('_')[0]
         if classifier_class not in supported_classifiers:
             print('Classifier not supported in configuration file\nList of available classifiers:\n')
             for sc in np.sort(list(supported_classifiers.keys())):
@@ -229,6 +235,13 @@ else:
         for sd in supported_detectors:
             print('\t\t-c ' + sd + '\t--->\t' + supported_detectors[sd].split('_')[1] + '\t\timplemented in ' +
                   supported_detectors[sd].split('_')[0])
+        sys.exit()
+
+    if optimizer != '' and optimizer not in supported_optimizers:
+        print('Optimizer not supported\nList of available classifiers:\n')
+        for so in supported_optimizers:
+            print('-O ' + so + '\t--->\t' + supported_optimizers[so].split('_')[1] + '\t\timplemented in ' +
+                  supported_optimizers[so].split('_')[0])
         sys.exit()
 
     if classifier_name != '':
@@ -301,6 +314,7 @@ hierarchical_classifier = HierarchicalClassifier(
     detector_opts=detector_opts,
     workers_number=workers_number,
     anomaly_classes=anomaly_classes,
+    anomaly_classes_ratio=anomaly_classes_ratio,
     epochs_number=epochs_number,
     arbitrary_discr=arbitrary_discr,
     n_clusters=n_clusters,
@@ -310,11 +324,13 @@ hierarchical_classifier = HierarchicalClassifier(
     benign_class=benign_class,
     nominal_features_index=nominal_features_index,
     optimize=optimize,
+    optimizer=optimizer,
     weight_features=weight_features,
     parallelize=parallelize,
     buckets_number=buckets_number,
     unsupervised=unsupervised,
-    multimodal_index=multimodal_index
+    multimodal_index=multimodal_index,
+    embedding=embedding
 )
 
 if config:
@@ -324,8 +340,8 @@ if config:
 hierarchical_classifier.init_output_files()
 if input_is_image:
     hierarchical_classifier.load_image()
-elif early:
-    hierarchical_classifier.load_early_dataset()
+# elif early:
+#     hierarchical_classifier.load_early_dataset()
 else:
     # Load dataset
     print('\nLoading input file ' + input_file + '\n')

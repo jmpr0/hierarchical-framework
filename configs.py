@@ -35,3 +35,8 @@ supported_detectors = {
     'km2ae': 'Keras_MultimodalAutoencoder',
     'kbim2ae': 'Keras_BinaryMultimodalAutoencoder'
 }
+
+supported_optimizers = {
+    'gscv': 'Sklearn_GridSearchCV',
+    'ga': 'Custom_GeneticAlgorithm'
+}
