@@ -126,8 +126,6 @@ def apply_benign_hiddens(y, target_index, benign_class, hidden_classes):
     return anomaly_class
 
 
-# NON APPLICARE LA CAZZO DI FEATURES SELECTION SUPERVISIONATA QUANDO FAI ANOMALY DETECTION
-# PORCODDIO
 def feature_selection(X, y, features_number, dataset_features_number):
     features_index = list(range(dataset_features_number))
     # TODO: does not work with onehotencoded and with the new names of dataset
