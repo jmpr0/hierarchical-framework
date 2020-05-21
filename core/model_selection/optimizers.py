@@ -28,7 +28,7 @@ def merge_dicts(dicts):
 
 class Sklearn_GridSearchCV(GridSearchCV):
     def __init__(self, estimator, param_grid, scoring=None, n_jobs=None, iid='deprecated', refit=True, cv=None,
-                 verbose=0, pre_dispatch='2*n_jobs', error_score=nan, return_train_score=False):
+                 verbose=0, pre_dispatch='2*n_jobs', error_score=None, return_train_score=False):
         super(Sklearn_GridSearchCV, self).__init__(estimator, param_grid, scoring=scoring, n_jobs=n_jobs,
                                                    iid=iid, refit=refit, cv=cv,
                                                    verbose=verbose, pre_dispatch=pre_dispatch,
@@ -37,7 +37,7 @@ class Sklearn_GridSearchCV(GridSearchCV):
 
 
 class Custom_GeneticAlgorithm(object):
-    def __init__(self, estimator, param_grid, generations=50, population_size=20, min_delta=1e-4, mutation_proba=.5,
+    def __init__(self, estimator, param_grid, generations=50, population_size=20, min_delta=1e-4, mutation_proba=.1,
                  common_param=dict(), modality='max', n_jobs=1, verbose=1, seed=0):
         """
         :param estimator: class of the estimator to optimize.
