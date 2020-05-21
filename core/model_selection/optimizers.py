@@ -1,6 +1,5 @@
 import itertools
 import math
-import random
 from collections import OrderedDict
 from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
@@ -38,7 +37,7 @@ class Sklearn_GridSearchCV(GridSearchCV):
 
 
 class Custom_GeneticAlgorithm(object):
-    def __init__(self, estimator, param_grid, generations=50, population_size=20, min_delta=1e-4, mutation_proba=.1,
+    def __init__(self, estimator, param_grid, generations=50, population_size=20, min_delta=1e-4, mutation_proba=.5,
                  common_param=dict(), modality='max', n_jobs=1, verbose=1, seed=0):
         """
         :param estimator: class of the estimator to optimize.
@@ -53,9 +52,9 @@ class Custom_GeneticAlgorithm(object):
         :param modality: string in {'max', 'min'}, optimization target, default is 'max'.
         :param n_jobs: integer, number of process for optimization parallelization, default is 1.
         :param verbose: integer in {0, 1}.
-        :param seed: integer, random seed, default is 0.
+        :param seed: integer, np.random seed, default is 0.
         """
-        random.seed(seed)
+        np.random.seed(seed)
         self.estimator = estimator
         self.generations = generations
         self.population_size = population_size
@@ -106,7 +105,7 @@ class Custom_GeneticAlgorithm(object):
         self.best_estimator_ = None
         self.cv_results_ = dict()
 
-    def verbose_print(self, *args):
+    def vprint(self, *args):
         if self.verbose:
             return print(args)
 
@@ -116,38 +115,39 @@ class Custom_GeneticAlgorithm(object):
         :param y: array, labels (nsamples, )
         :return: best_estimator fitted on X, y
         TODO: manage X and y as shared variables between processes to avoid RAM saturation
+        TODO: leverage workers attribute of keras.models.Model.fit method instead of current management
         """
-        self.verbose_print('Initialize population')
+        self.vprint('Initialize population')
         self.init_population()
         generation_cnt = 0
         while True:
             # Evaluation of current generation
-            self.verbose_print('Generation %s' % generation_cnt)
-            self.verbose_print('Population size: %s' % self.population_size)
+            self.vprint('Generation %s' % generation_cnt)
+            self.vprint('Population size: %s' % self.population_size)
             fitness_values = list()
-            self.verbose_print('Compute fitness function')
+            self.vprint('Compute fitness function')
             with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
                 futures = list()
                 for i, chromosome in enumerate(self.population):
-                    self.verbose_print('Model %s:' % i, {attribute: gene for attribute, gene in zip(
+                    self.vprint('Model %s:' % i, {attribute: gene for attribute, gene in zip(
                         self.param_grid.keys(), chromosome)})
                     attributes = {attribute: gene for attribute, gene in zip(
                         self.param_grid.keys(), chromosome)}
                     futures.append(executor.submit(self.fitness_function, attributes, X, y))
                 for i, future in enumerate(futures):
                     fitness_values.append(future.result())
-                    self.verbose_print('Fitness value Model %s:' % i, fitness_values[-1])
+                    self.vprint('Fitness value Model %s:' % i, fitness_values[-1])
             # Selecting the best n_parents parents
             parents_indexes = self.parents_selection(fitness_values)
             # Updating current best fitness value
             self.curr_best_fitness_value = np.max(fitness_values) if self.modality == 'max' else np.min(fitness_values)
             generation_cnt += 1
-            self.verbose_print('Best fitness value of Generation %s:' % generation_cnt, self.curr_best_fitness_value)
+            self.vprint('Best fitness value of Generation %s:' % generation_cnt, self.curr_best_fitness_value)
             gain = (self.curr_best_fitness_value - self.old_best_fitness_value)
             is_better = gain >= self.min_delta if self.modality == 'max' else gain <= self.min_delta
             is_last_gen = generation_cnt == self.generations
             if not is_better or is_last_gen:
-                self.verbose_print('End of evolution')
+                self.vprint('End of evolution')
                 estimator = self.estimator(**{attribute: gene for attribute, gene in zip(
                     self.param_grid, self.population[parents_indexes[0]])})
                 estimator.fit(X, y)
@@ -155,22 +155,27 @@ class Custom_GeneticAlgorithm(object):
                 return self.best_estimator_
             # Generation of next generation
             self.old_best_fitness_value = self.curr_best_fitness_value
-            self.verbose_print('Lucky bachelor selection')
+            self.vprint('Lucky bachelor selection')
             lucky_bachelors = self.lucky_bachelors_selection(parents_indexes)
-            self.verbose_print('Application of mutation to bachelors')
+            self.vprint('Application of mutation to bachelors')
             for lucky_bachelor in lucky_bachelors:
                 self.mutation(lucky_bachelor)
-            self.verbose_print('Compute mating set')
+            self.vprint('Compute mating set')
             mating_set = self.mating_pool(parents_indexes)
             offsprings = list()
-            self.verbose_print('Application of crossover')
+            self.vprint('Application of crossover to generate offsprings.')
             for mating in mating_set:
                 offsprings.extend(self.crossover(mating))
-            self.verbose_print('Application of mutation to offsprings')
+            self.vprint('Application of mutation to offsprings')
             for offspring in offsprings:
                 self.mutation(offspring)
+            # Check in enough unique offsprings (>=self.n_planned_offsprings) are generated.
+            while not self.check_offsprings(offsprings):
+                self.vprint('Re-application of mutation to offsprings')
+                for offspring in offsprings:
+                    self.mutation(offspring)
             offsprings = self.population_control(offsprings)
-            self.verbose_print('Population renewal')
+            self.vprint('Population renewal')
             parents = [self.population[i] for i in parents_indexes]
             self.population = parents + lucky_bachelors + offsprings
 
@@ -191,8 +196,9 @@ class Custom_GeneticAlgorithm(object):
         """
         chromosome = list()
         for attribute in self.param_grid:
-            gene_value = random.choice(self.param_grid[attribute])
-            chromosome.append(gene_value)
+            gene_values = self.param_grid[attribute]
+            gene_value_index = np.random.choice(range(len(gene_values)))
+            chromosome.append(gene_values[gene_value_index])
         return chromosome
 
     def fitness_function(self, attributes, X, y):
@@ -248,7 +254,7 @@ class Custom_GeneticAlgorithm(object):
         offsprings = [None, None]
         parent_0 = self.population[parents_indexes[0]]
         parent_1 = self.population[parents_indexes[1]]
-        points = list(sorted(random.sample(range(len(parent_0)), k=k)))
+        points = list(sorted(np.random.choice(range(len(parent_0)), size=k, replace=False)))
         offsprings[0] = parent_0[:points[0]]
         offsprings[1] = parent_1[:points[0]]
         for i, point in enumerate(points[:-1]):
@@ -266,31 +272,43 @@ class Custom_GeneticAlgorithm(object):
         Actually chromosome is cumulatively mutated, i.e. chromosome(t_i) = mutation(chromosome(t_i+1))
         To speedup convergence, we does not assure that mutated chromosomes are unique or never seen on previous
         generations.
+        Number of mutating genes is selected randomly.
+        TODO: assign a score for each gene based on score of corresponding chromosomes. The score of the gene could
+         be useful to weigth the mutation.
         """
         # while True:
-        n_mutations = random.randint(1, len(chromosome))
+        n_mutations = np.random.randint(1, len(chromosome) + 1)
         for _ in range(n_mutations):
-            mutate = random.random() <= self.mutation_proba
+            mutate = np.random.np.random() <= self.mutation_proba
             if mutate:
-                mutation_p = random.randint(0, len(chromosome) - 1)
-                mutated_value = random.choice(self.param_grid[list(self.param_grid.keys())[mutation_p]])
-                chromosome[mutation_p] = mutated_value
+                mutant_gene_index = np.random.randint(0, len(chromosome) - 1)
+                gene_values = self.param_grid[list(self.param_grid.keys())[mutant_gene_index]]
+                mutated_value_index = np.random.choice(range(len(gene_values)))
+                chromosome[mutant_gene_index] = gene_mutants[mutated_value_index]
             # if chromosome not in self.population:
         return chromosome
 
     def lucky_bachelors_selection(self, parents_indexes):
         bachelors_index = [i for i in range(self.population_size) if i not in parents_indexes]
-        lucky_bachelors_index = random.sample(bachelors_index, self.n_lucky_bachelors)
+        lucky_bachelors_index = np.random.choice(bachelors_index, size=self.n_lucky_bachelors, replace=False)
         lucky_bachelors = [self.population[i] for i in lucky_bachelors_index]
         # Save dead
         self.dead += [self.population[i] for i in bachelors_index if i not in lucky_bachelors_index]
         return lucky_bachelors
 
-    def population_control(self, offsprings):
-        # Offsprings may not to be unique, due to speedup convergence
+    def check_offsprings(self, offsprings):
+        # Offsprings may not to be unique, due to speedup convergence. This function check if they are enough.
         unique_offsprings = set([tuple(offspring) for offspring in offsprings])
-        offsprings = [list(offspring) for offspring in unique_offsprings]
-        offsprings = offsprings[:self.n_planned_offsprings]
+        return len(unique_offsprings) >= self.n_planned_offsprings
+
+    def population_control(self, offsprings):
+        """
+        Selects randomly n_planned_offsprings within offsprings
+        """
+        n_offsprings = len(offsprings)
+        selected_offspring_index = np.random.choice(range(n_offsprings), size=self.n_planned_offsprings,
+                                                    replace=False)
+        offsprings = [offsprings[i] for i in selected_offspring_index]
         return offsprings
 
 
@@ -310,14 +328,48 @@ class Custom_BaseEstimator(BaseEstimator, ClassifierMixin):
 
 
 class MLP(Custom_BaseEstimator):
-    def __init__(self):
-        pass
+    def __init__(self, input_shape, output_shape, core_layer=Dense, n_layers=3, n_units=32, dropout_rate=.1,
+                 activations='relu', output_activation='softmax',
+                 optimizer='rmsprop', loss=None, metrics=None, loss_weights=None, weighted_metrics=None,
+                 epochs=100, batch_size=32, callbacks=None, shuffle=True):
+        # Common parameters
+        self.input_shape = input_shape
+        self.output_shape = output_shape
+        self.loss = loss
+        self.metrics = metrics
+        self.loss_weights = loss_weights
+        self.weighted_metrics = weighted_metrics
+        # Macro-architecture parameters (e.g. type of Net)
+        # Micro-architecture parameters
+        self.core_layer = core_layer
+        self.n_layers = n_layers
+        self.n_units = n_units if isinstance(n_units, list) else [n_units] * n_layers
+        self.dropout_rate = dropout_rate
+        self.activations = activations if isinstance(activations, list) else [activations] * n_layers
+        self.output_activation = output_activation
+        # Hyperparameters
+        self.optimizer = optimizer
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.callbacks = callbacks
 
-    def build_estimator(self, ):
-        pass
+        self.estimator = self.build_estimator()
+
+    def build_estimator(self):
+        input_layer = Input(self.input_shape)
+        x = self.core_layer(units=self.n_units[0], activation=self.activations[0])(input_layer)
+        for l in range(1, self.n_layers):
+            x = self.core_layer(units=self.n_units[l], activation=self.activations[l])(x)
+        d = Dropout(self.dropout_rate)(x)
+        output_layer = Dense(self.output_shape, activation=self.output_activation)(d)
+
+        model = Model(input_layer, output_layer)
+        model.compile(optimizer=self.optimizer, loss=self.loss, metrics=self.metrics, loss_weights=self.loss_weights,
+                      weighted_metrics=self.weighted_metrics)
+        return model
 
     def fit(self, X, y):
-        pass
+        return self.estimator.fit(X, y, batch_size=self.batch_size, epochs=self.epochs, callbacks=self.callbacks)
 
     def score(self, X, y, sample_weight=None):
-        pass
+        return self.estimator.evaluate(X, y, sample_weight=sample_weight)
