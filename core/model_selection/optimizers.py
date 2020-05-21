@@ -1,14 +1,16 @@
-from sklearn.model_selection import GridSearchCV
-import random
-from collections import OrderedDict
 import itertools
 import math
-import scipy.special as spec
-from time import time
+import random
+from collections import OrderedDict
+from concurrent.futures import ProcessPoolExecutor
 from copy import deepcopy
+
 import numpy as np
+import scipy.special as spec
+from sklearn.base import BaseEstimator
+from sklearn.base import ClassifierMixin
+from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import StratifiedKFold
-from concurrent.futures import ThreadPoolExecutor
 
 
 def merge_dicts(dicts):
@@ -37,8 +39,23 @@ class Sklearn_GridSearchCV(GridSearchCV):
 
 class Custom_GeneticAlgorithm(object):
     def __init__(self, estimator, param_grid, generations=50, population_size=20, min_delta=1e-4, mutation_proba=.1,
-                 n_jobs=None, verbose=1, common_param=dict()):
-        random.seed(0)
+                 common_param=dict(), modality='max', n_jobs=1, verbose=1, seed=0):
+        """
+        :param estimator: class of the estimator to optimize.
+        :param param_grid: dictionary as {hyperparameter_name: [value_0, ...], ...}, estimator's hyperparameters to
+        optimize.
+        :param generations: integer, number of generation to wait until the end.
+        :param population_size: integer, size of the population at each generation.
+        :param min_delta: float, minimum tolerable score increment. Genetic Algorithm stops if improvement is under
+        min_delta.
+        :param mutation_proba: float in (0, 1], probability a mutation occurs.
+        :param common_param: dictionary as {hyperparameter_name: value, ...}, fixed estimator's hyperparameters.
+        :param modality: string in {'max', 'min'}, optimization target, default is 'max'.
+        :param n_jobs: integer, number of process for optimization parallelization, default is 1.
+        :param verbose: integer in {0, 1}.
+        :param seed: integer, random seed, default is 0.
+        """
+        random.seed(seed)
         self.estimator = estimator
         self.generations = generations
         self.population_size = population_size
@@ -47,26 +64,43 @@ class Custom_GeneticAlgorithm(object):
         self.param_grid = OrderedDict(param_grid.items())
         self.min_delta = min_delta
         self.mutation_proba = mutation_proba
-        self.n_jobs = None
-        self.verbose = verbose
         self.common_param = common_param
+        self.modality = modality
+        self.n_jobs = n_jobs
+        self.verbose = verbose
 
-        self.parents_n = math.ceil(population_size * .25)
-        print('parents_n', self.parents_n)
-        self.lucky_unpaireds_n = math.ceil((population_size - self.parents_n) * .1)
-        print('lucky_unpaireds_n', self.lucky_unpaireds_n)
-        offsprings_n = spec.comb(self.parents_n, 2) * 2
-        print('offsprings_n', offsprings_n)
-        population_control_factor = (population_size - self.lucky_unpaireds_n - self.parents_n) / (
-                (self.parents_n - 1) * self.parents_n)
+        parents_ratio = .25
+        bachelors_ratio = .075
+        n_offsprings_per_parents = 2
+
+        # Parents are the 25% of the entire population.
+        self.n_parents = math.ceil(population_size * parents_ratio)
+        print('n_parents', self.n_parents)
+        # Lucky bachelors are the 7.5% of the entire population.
+        self.n_lucky_bachelors = math.ceil(population_size * bachelors_ratio)
+        print('n_lucky_bachelors', self.n_lucky_bachelors)
+        # Total number of offsprings is obtained by combining 2 diverse parents per time.
+        # Two parents generate n_offsprings_per_parents.
+        n_couples = spec.comb(self.n_parents, 2)
+        print('n_couples', n_couples)
+        n_offsprings = n_couples * n_offsprings_per_parents
+        print('n_offsprings', n_offsprings)
+        # Planned offsprings are the rest of the population (i.e. w/o parents and bachelors)
+        self.n_planned_offsprings = population_size - self.n_lucky_bachelors - self.n_parents
+        print('n_planned_offsprings', self.n_planned_offsprings)
+        # Population control factor is the percentage of selected offsprings, the rest down at Taigeto.
+        population_control_factor = self.n_planned_offsprings / n_offsprings
         print('population_control_factor', population_control_factor)
-        self.offsprings_planned_n = math.ceil(offsprings_n * population_control_factor)
-        print('offsprings_planned_n', self.offsprings_planned_n)
 
-        self.population = [None] * population_size
-        self.old_max_fitness_value = 0
-        self.killed = list()
+        assert n_offsprings >= self.n_planned_offsprings, 'Error: not enough offsprings.'
 
+        self.population = list()
+        self.old_best_fitness_value = 0
+        # List of discarded models
+        self.dead = list()
+
+        # Variable to handle already evaluated models, here are stored hyperparameters configuration and corresponding
+        # score
         self.memoized_score_estimators_dict = dict()
 
         self.best_estimator_ = None
@@ -77,15 +111,22 @@ class Custom_GeneticAlgorithm(object):
             return print(args)
 
     def fit(self, X, y):
+        """
+        :param X: matrix, features in the form of (nsamples, nfeatures)
+        :param y: array, labels (nsamples, )
+        :return: best_estimator fitted on X, y
+        TODO: manage X and y as shared variables between processes to avoid RAM saturation
+        """
         self.verbose_print('Initialize population')
         self.init_population()
         generation_cnt = 0
         while True:
+            # Evaluation of current generation
             self.verbose_print('Generation %s' % generation_cnt)
             self.verbose_print('Population size: %s' % self.population_size)
             fitness_values = list()
-            self.verbose_print('Compute fitness functions')
-            with ThreadPoolExecutor(max_workers=self.n_jobs) as executor:
+            self.verbose_print('Compute fitness function')
+            with ProcessPoolExecutor(max_workers=self.n_jobs) as executor:
                 futures = list()
                 for i, chromosome in enumerate(self.population):
                     self.verbose_print('Model %s:' % i, {attribute: gene for attribute, gene in zip(
@@ -96,114 +137,139 @@ class Custom_GeneticAlgorithm(object):
                 for i, future in enumerate(futures):
                     fitness_values.append(future.result())
                     self.verbose_print('Fitness value Model %s:' % i, fitness_values[-1])
-            parents_index = self.parents_selection(fitness_values, self.parents_n)
-            self.curr_max_fitness_value = np.max(fitness_values)
-            self.verbose_print('Best fitness value of Generation %s:' % generation_cnt, self.curr_max_fitness_value)
-            is_not_better = (
-                                    self.curr_max_fitness_value - self.old_max_fitness_value) < self.min_delta
-            is_last_gen = generation_cnt >= self.generations
-            if is_not_better or is_last_gen:
+            # Selecting the best n_parents parents
+            parents_indexes = self.parents_selection(fitness_values)
+            # Updating current best fitness value
+            self.curr_best_fitness_value = np.max(fitness_values) if self.modality == 'max' else np.min(fitness_values)
+            generation_cnt += 1
+            self.verbose_print('Best fitness value of Generation %s:' % generation_cnt, self.curr_best_fitness_value)
+            gain = (self.curr_best_fitness_value - self.old_best_fitness_value)
+            is_better = gain >= self.min_delta if self.modality == 'max' else gain <= self.min_delta
+            is_last_gen = generation_cnt == self.generations
+            if not is_better or is_last_gen:
                 self.verbose_print('End of evolution')
                 estimator = self.estimator(**{attribute: gene for attribute, gene in zip(
-                    self.param_grid, self.population[parents_index[0]])})
+                    self.param_grid, self.population[parents_indexes[0]])})
                 estimator.fit(X, y)
                 self.best_estimator_ = estimator
                 return self.best_estimator_
-            self.old_max_fitness_value = self.curr_max_fitness_value
-            self.verbose_print('Lucky unpaired selection')
-            lucky_unpaireds = self.lucky_umpaireds_selection(parents_index)
-            self.verbose_print('Application of mutation to unpaireds')
-            for lucky_unpaired in lucky_unpaireds:
-                lucky_unpaired = self.mutation(lucky_unpaired)
+            # Generation of next generation
+            self.old_best_fitness_value = self.curr_best_fitness_value
+            self.verbose_print('Lucky bachelor selection')
+            lucky_bachelors = self.lucky_bachelors_selection(parents_indexes)
+            self.verbose_print('Application of mutation to bachelors')
+            for lucky_bachelor in lucky_bachelors:
+                self.mutation(lucky_bachelor)
             self.verbose_print('Compute mating set')
-            mating_set = self.mating_pool(parents_index)
+            mating_set = self.mating_pool(parents_indexes)
             offsprings = list()
             self.verbose_print('Application of crossover')
             for mating in mating_set:
                 offsprings.extend(self.crossover(mating))
             self.verbose_print('Application of mutation to offsprings')
             for offspring in offsprings:
-                offspring = self.mutation(offspring)
+                self.mutation(offspring)
             offsprings = self.population_control(offsprings)
             self.verbose_print('Population renewal')
-            parents = [self.population[i] for i in parents_index]
-            self.population = parents + lucky_unpaireds + offsprings
-            generation_cnt += 1
+            parents = [self.population[i] for i in parents_indexes]
+            self.population = parents + lucky_bachelors + offsprings
 
     def init_population(self):
-        for i in range(self.population_size):
-            while True:
-                chromosome = list()
-                for attribute in self.param_grid:
-                    gene_value = random.choice(self.param_grid[attribute])
-                    chromosome.append(gene_value)
-                if chromosome not in self.population:
-                    self.population[i] = chromosome
-                    break
+        """
+        Function initializes the population to an unique set of chromosomes.  
+        """
+        for _ in range(self.population_size):
+            chromosome = self.generate_chromosome()
+            while chromosome in self.population:
+                # We avoid to generate the same chromosome twice
+                chromosome = self.generate_chromosome()
+            self.population.append(chromosome)
+
+    def generate_chromosome(self):
+        """
+        Function generates a chromosome
+        """
+        chromosome = list()
+        for attribute in self.param_grid:
+            gene_value = random.choice(self.param_grid[attribute])
+            chromosome.append(gene_value)
+        return chromosome
 
     def fitness_function(self, attributes, X, y):
+        # TODO: implement a training_time dependent fitness_function
+        # We add common_parameters to current configuration of attributes
         attributes.update(self.common_param)
-        # return random.random()
+        # If set of attributes is already evaluated, return the associated score
         if str(attributes) in self.memoized_score_estimators_dict:
             return self.memoized_score_estimators_dict[str(attributes)]
-        else:
-            # t = time()
-            estimator = self.estimator(**attributes)
-            skf = StratifiedKFold(n_splits=3)
-            scores = []
-            for train_index, validation_index in skf.split(X, y):
-                estimator_under_test = deepcopy(estimator)
-                estimator_under_test.fit(X[train_index], y[train_index])
-                scores.append(estimator_under_test.score(X[validation_index], y[validation_index]))
-            score = np.mean(scores)
-            # t = time() - t
-            # score = (math.exp(score) + math.exp(1 / t)) / 2
-            self.memoized_score_estimators_dict[str(attributes)] = score
-            self.cv_results_.setdefault('params', []).append(str(attributes))
-            self.cv_results_.setdefault('rank_test_score', []).append(score)
+        # t = time()
+        # Instantiate the estimator
+        estimator = self.estimator(**attributes)
+        skf = StratifiedKFold(n_splits=3)
+        scores = []
+        for train_index, validation_index in skf.split(X, y):
+            estimator_under_test = deepcopy(estimator)
+            estimator_under_test.fit(X[train_index], y[train_index])
+            scores.append(estimator_under_test.score(X[validation_index], y[validation_index]))
+        # Compute the mean score over three fold
+        score = np.mean(scores)
+        # t = time() - t
+        # score = (math.exp(score) + math.exp(1 / t)) / 2
+        self.memoized_score_estimators_dict[str(attributes)] = score
+        self.cv_results_.setdefault('params', []).append(str(attributes))
+        self.cv_results_.setdefault('rank_test_score', []).append(score)
         return score
 
-    def parents_selection(self, fitness_values, parents_n):
-        parents_index = list(reversed(np.argsort(fitness_values)))[:parents_n]
-        return parents_index
+    def parents_selection(self, fitness_values):
+        # Best n_parents are selected by fitness_values
+        parents_indexes = list(reversed(np.argsort(fitness_values)))[:self.n_parents]
+        return parents_indexes
 
-    def mating_pool(self, parents_index):
+    def mating_pool(self, parents_indexes):
+        # Couple of parents_indexes forming a mating_set
         mating_set = list(set([tuple(sorted(c)) for c in itertools.combinations(
-            parents_index, 2)]))
+            parents_indexes, 2)]))
         return mating_set
 
-    def crossover(self, parents_index, k=3):
+    def crossover(self, parents_indexes, k=3):
+        # Crossover between two parents, k is the number of crossover points
+        # To speedup convergence, generation of already seen chromosomes is not handled
+        """
+        Example:
+            k =           3
+            points =      [   1,    3, 4]
+            crossover         V     V  V
+            parent_0 =    [0, 1, 2, 3, 4, 5]
+            parent_1 =    [5, 4, 3, 2, 1, 0]
+            offspring_0 = [0, 4, 3, 3, 1, 0]
+            offspring_1 = [5, 1, 2, 2, 4, 5]
+        """
         # while True:
         offsprings = [None, None]
-        parent_0 = self.population[parents_index[0]]
-        parent_1 = self.population[parents_index[1]]
-        points = list(sorted([random.randint(1, len(parent_0)) for _ in range(k)]))
-        for i, point in enumerate(points + [points[-1]]):
-            if i == 0:
-                offsprings[0] = parent_0[:point]
-                offsprings[1] = parent_1[:point]
-            elif i % 2 == 0:
-                if i == k:
-                    offsprings[0] += parent_0[point:]
-                    offsprings[1] += parent_1[point:]
-                else:
-                    offsprings[0] += parent_0[points[i - 1]:point]
-                    offsprings[1] += parent_1[points[i - 1]:point]
-            else:
-                if i == k:
-                    offsprings[0] += parent_1[point:]
-                    offsprings[1] += parent_0[point:]
-                else:
-                    offsprings[0] += parent_1[points[i - 1]:point]
-                    offsprings[1] += parent_0[points[i - 1]:point]
+        parent_0 = self.population[parents_indexes[0]]
+        parent_1 = self.population[parents_indexes[1]]
+        points = list(sorted(random.sample(range(len(parent_0)), k=k)))
+        offsprings[0] = parent_0[:points[0]]
+        offsprings[1] = parent_1[:points[0]]
+        for i, point in enumerate(points[:-1]):
+            offsprings[0] += parent_1[point:points[i + 1]]
+            offsprings[1] += parent_0[point:points[i + 1]]
+            # Swapping parents
+            parent_0, parent_1 = parent_1, parent_0
+        offsprings[0] += parent_1[points[-1]:]
+        offsprings[1] += parent_0[points[-1]:]
         # if offsprings[0] not in self.population and offsprings[1] not in self.population:
         return offsprings
 
     def mutation(self, chromosome):
-        # Continuiamo a mutare il cromosoma oppure partiamo ogni volta dallo stesso cromosoma? per ora la prima
+        """
+        Actually chromosome is cumulatively mutated, i.e. chromosome(t_i) = mutation(chromosome(t_i+1))
+        To speedup convergence, we does not assure that mutated chromosomes are unique or never seen on previous
+        generations.
+        """
         # while True:
-        mutation_n = random.randint(1, len(chromosome))
-        for _ in range(mutation_n):
+        n_mutations = random.randint(1, len(chromosome))
+        for _ in range(n_mutations):
             mutate = random.random() <= self.mutation_proba
             if mutate:
                 mutation_p = random.randint(0, len(chromosome) - 1)
@@ -212,16 +278,46 @@ class Custom_GeneticAlgorithm(object):
             # if chromosome not in self.population:
         return chromosome
 
-    def lucky_umpaireds_selection(self, parents_index):
-        unpaireds_index = [i for i in range(self.population_size) if i not in parents_index]
-        lucky_unpaireds_index = random.sample(unpaireds_index, self.lucky_unpaireds_n)
-        lucky_unpaireds = [self.population[i] for i in lucky_unpaireds_index]
-        # Save killed
-        self.killed += [self.population[i] for i in unpaireds_index if i not in lucky_unpaireds_index]
-        return lucky_unpaireds
+    def lucky_bachelors_selection(self, parents_indexes):
+        bachelors_index = [i for i in range(self.population_size) if i not in parents_indexes]
+        lucky_bachelors_index = random.sample(bachelors_index, self.n_lucky_bachelors)
+        lucky_bachelors = [self.population[i] for i in lucky_bachelors_index]
+        # Save dead
+        self.dead += [self.population[i] for i in bachelors_index if i not in lucky_bachelors_index]
+        return lucky_bachelors
 
     def population_control(self, offsprings):
-        offsprings = [list(offspring) for offspring in set([tuple(offspring) for offspring in offsprings])]
-        assert len(offsprings) >= self.offsprings_planned_n, 'Warning: not enough unique offspring'
-        offsprings = offsprings[:self.offsprings_planned_n]
+        # Offsprings may not to be unique, due to speedup convergence
+        unique_offsprings = set([tuple(offspring) for offspring in offsprings])
+        offsprings = [list(offspring) for offspring in unique_offsprings]
+        offsprings = offsprings[:self.n_planned_offsprings]
         return offsprings
+
+
+from keras.models import Model
+from keras.layers import *
+
+
+class Custom_BaseEstimator(BaseEstimator, ClassifierMixin):
+    def build_estimator(self, **params: dict) -> Model:
+        pass
+
+    def fit(self, X, y):
+        pass
+
+    def score(self, X, y, sample_weight=None):
+        pass
+
+
+class MLP(Custom_BaseEstimator):
+    def __init__(self):
+        pass
+
+    def build_estimator(self, ):
+        pass
+
+    def fit(self, X, y):
+        pass
+
+    def score(self, X, y, sample_weight=None):
+        pass
