@@ -1,3 +1,4 @@
+import os
 import itertools
 import math
 from collections import OrderedDict
@@ -133,9 +134,10 @@ class Custom_GeneticAlgorithm(object):
                         self.param_grid.keys(), chromosome)})
                     attributes = {attribute: gene for attribute, gene in zip(
                         self.param_grid.keys(), chromosome)}
-                    futures.append(executor.submit(self.fitness_function, attributes, X, y))
-                for i, future in enumerate(futures):
-                    fitness_values.append(future.result())
+                    #futures.append(executor.submit(self.fitness_function, attributes, X, y))
+                    fitness_values.append(self.fitness_function(attributes, X, y))
+                #for i, future in enumerate(futures):
+                    #fitness_values.append(future.result())
                     self.vprint('Fitness value Model %s:' % i, fitness_values[-1])
             # Selecting the best n_parents parents
             parents_indexes = self.parents_selection(fitness_values)
@@ -202,6 +204,7 @@ class Custom_GeneticAlgorithm(object):
         return chromosome
 
     def fitness_function(self, attributes, X, y):
+        print(os.getpid(), 'STARTED')
         # TODO: implement a training_time dependent fitness_function
         # We add common_parameters to current configuration of attributes
         attributes.update(self.common_param)
@@ -210,11 +213,15 @@ class Custom_GeneticAlgorithm(object):
             return self.memoized_score_estimators_dict[str(attributes)]
         # t = time()
         # Instantiate the estimator
-        estimator = self.estimator(**attributes)
+        # estimator = self.estimator(**attributes)
         skf = StratifiedKFold(n_splits=3)
         scores = []
+        k=0
         for train_index, validation_index in skf.split(X, y):
-            estimator_under_test = deepcopy(estimator)
+            estimator_under_test = self.estimator(**attributes)
+            k+=1
+            #print(os.getpid(), ':', k)
+            #estimator_under_test = deepcopy(estimator)
             estimator_under_test.fit(X[train_index], y[train_index])
             scores.append(estimator_under_test.score(X[validation_index], y[validation_index]))
         # Compute the mean score over three fold
@@ -224,6 +231,7 @@ class Custom_GeneticAlgorithm(object):
         self.memoized_score_estimators_dict[str(attributes)] = score
         self.cv_results_.setdefault('params', []).append(str(attributes))
         self.cv_results_.setdefault('rank_test_score', []).append(score)
+        print(os.getpid(), ':', 'ENDED')
         return score
 
     def parents_selection(self, fitness_values):
@@ -369,7 +377,8 @@ class MLP(Custom_BaseEstimator):
         return model
 
     def fit(self, X, y):
-        return self.estimator.fit(X, y, batch_size=self.batch_size, epochs=self.epochs, callbacks=self.callbacks)
+        #print(os.getpid(), ': FIT')
+        return self.estimator.fit(X, y, batch_size=self.batch_size, epochs=self.epochs, callbacks=self.callbacks, verbose=2)
 
     def score(self, X, y, sample_weight=None):
         return self.estimator.evaluate(X, y, sample_weight=sample_weight)
