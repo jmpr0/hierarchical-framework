@@ -6,6 +6,7 @@ import os
 import sys
 
 import numpy as np
+import logging
 
 from core.hierarchical_classifier import HierarchicalClassifier
 from configs import *
@@ -247,7 +248,7 @@ if level_target > levels_number:
     print('Warning: level target was greater than levels number, it will be treated as equal.')
 
 if not input_file.endswith('.arff') and not input_file.endswith('.csv') and not input_file.endswith('.pickle'):
-    print('input files must be or .arff or .csv or .pickle')
+    print('input files must be or .arff or .csv or .pickle ')
     sys.exit()
 
 if 'k' in import_str:
@@ -275,8 +276,11 @@ if 'd' in import_str:
 if 'w' in import_str:
     import core.wrappers.weka_wrapper
 
-    # set_log_level and get_level are "PEZZOTTO"s on the original core.wrappers.weka_wrapper.jvm package
-    core.wrappers.weka_wrapper.jvm.set_log_level(core.wrappers.weka_wrapper.jvm.get_level('ERROR'))
+    # set_log_level is a "PEZZOTTO"s on the original core.wrappers.weka_wrapper.jvm package
+    # def set_log_level(log_level):
+    #     logger.setLevel(log_level)
+    # To add in file lib/python3.7/site-packages/weka/core/jvm.py
+    core.wrappers.weka_wrapper.jvm.set_log_level(logging.ERROR)
     core.wrappers.weka_wrapper.jvm.start()
 
 if classifier_class == 'kc2dae':

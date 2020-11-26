@@ -29,5 +29,5 @@ supported_detectors = {
     'ksae': 'Keras_StackedAutoencoder',
     'kdae': 'Keras_DeepAutoencoder',
     'kc2dae': 'Keras_Convolutional2DAutoencoder',
-    'mlo' : 'MixtureLocalizationOutlier'
+    'mlo' : 'TOFIX_MixtureLocalizationOutlier'
 }

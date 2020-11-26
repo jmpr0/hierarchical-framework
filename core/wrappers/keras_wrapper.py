@@ -32,10 +32,12 @@ from keras.losses import categorical_crossentropy
 from keras.losses import binary_crossentropy
 
 # For reproducibility
-from tensorflow import set_random_seed, logging
+import tensorflow as tf
+import logging
 
-set_random_seed(0)
-logging.set_verbosity(logging.ERROR)
+tf.random.set_seed(0)
+logger = tf.get_logger()
+logger.setLevel(logging.ERROR)
 
 eps = 1e-2
 

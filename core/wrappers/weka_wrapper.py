@@ -1,5 +1,5 @@
 import numpy as np
-import time
+from time import process_time as time
 from sklearn.preprocessing import OrdinalEncoder
 from weka.classifiers import Classifier
 from weka.core.dataset import Attribute
@@ -47,9 +47,9 @@ class SklearnWekaWrapper(object):
         training_set.class_is_last()
 
         t = 0
-        t = time.time() - t
+        t = time() - t
         self._classifier.build_classifier(training_set)
-        t = time.time() - t
+        t = time() - t
 
         self.model_ = self._classifier
         self.tr_ = t
@@ -64,9 +64,9 @@ class SklearnWekaWrapper(object):
         dists = []
         t = 0
         for index, inst in enumerate(testing_set):
-            t = time.time() - t
+            t = time() - t
             pred = self._classifier.classify_instance(inst)
-            t = time.time() - t
+            t = time() - t
             dist = self._classifier.distribution_for_instance(inst)
             preds.append(pred)
             dists.append(dist)
@@ -113,8 +113,13 @@ class SklearnWekaWrapper(object):
                                       features.shape[1])
 
         if labels is not None:
-            for index, inst in enumerate(weka_dataset):
-                inst.set_value(features.shape[1], labels_column[index])
-                weka_dataset.set_instance(index, inst)
-
+            try:
+                for index, inst in enumerate(weka_dataset):
+                    inst.set_value(features.shape[1], labels_column[index])
+                    weka_dataset.set_instance(index, inst)
+            except TypeError as e:
+                print('Error: it seems InstanceIterator does not implement a valid iterator.')
+                print('Please, check the class definition in lib/python3.7/site-packages/weka/core/dataset.py.')
+                print('This error could be due to the next() method: it should be declared as __next__().')
+                exit()
         return weka_dataset
